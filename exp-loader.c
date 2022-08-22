@@ -9,10 +9,13 @@ void initLoader() {
 	printf("Initing\n");
 	handle = dlopen("libdriver.so", RTLD_LAZY|RTLD_LOCAL);
 	assert(handle);
+	printf("Opened %p\n", handle);
 }
 
 void deinitLoader() {
-	dlclose(handle);
+	printf("Closing %p\n", handle);
+	int res = dlclose(handle);
+	assert(!res);
 	handle = NULL;
 }
 
