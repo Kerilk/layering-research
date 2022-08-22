@@ -3,7 +3,7 @@
 #include <dlfcn.h>
 #include <assert.h>
 
-void *handle = NULL;
+static void *handle = NULL;
 
 void initLoader() {
 	printf("Initing\n");
