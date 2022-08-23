@@ -5,17 +5,26 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "spec.h"
+#include "dispatch.h"
+#include "layer.h"
 
-typedef int (*pfn_platformCreateDevice_t)(platform_t plt, device_t *dev);
-typedef int (*pfn_deviceFunc1_t)(device_t dev, int param);
-typedef int (*pfn_deviceFunc2_t)(device_t dev, int param);
-typedef int (*pfn_deviceDestroy_t)(device_t dev);
+static int
+getPlatforms_disp(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret);
+static int
+platformCreateDevice_disp(platform_t platform, device_t *device_ret);
+static int
+deviceFunc1_disp(device_t device, int param);
+static int
+deviceFunc2_disp(device_t device, int param);
+static int
+deviceDestroy_disp(device_t device);
 
-struct dispatch_s {
-	pfn_platformCreateDevice_t platformCreateDevice;
-	pfn_deviceFunc1_t          deviceFunc1;
-	pfn_deviceFunc2_t          deviceFunc2;
-	pfn_deviceDestroy_t        deviceDestroy;
+static struct dispatch_s _mdispatch = {
+	&getPlatforms_disp,
+	&platformCreateDevice_disp,
+	&deviceFunc1_disp,
+	&deviceFunc2_disp,
+	&deviceDestroy_disp
 };
 
 struct multiplex_s {
@@ -49,7 +58,10 @@ struct driver_s {
 	struct driver_s       *next;
 };
 
-//static struct layer_s  *_first_layer = NULL;
+static struct layer_s _layer_terminator = {
+	NULL, _mdispatch, NULL
+};
+static struct layer_s  *_first_layer = &_layer_terminator;
 static struct plt_s    *_first_platform = NULL;
 static size_t           _num_platforms = 0;
 static struct driver_s *_first_driver = NULL;
@@ -85,6 +97,7 @@ loadPlatforms(struct driver_s *driver) {
 		struct plt_s *plt = (struct plt_s *)calloc(1, sizeof(struct plt_s));
 		platform_t platform = driver->platforms[i];
 		plt->platform = platform;
+		plt->multiplex.dispatch.getPlatforms = NULL;
 		plt->multiplex.dispatch.platformCreateDevice = (pfn_platformCreateDevice_t)(intptr_t)driver->platformGetFunc(platform, "platformCreateDevice");
 		plt->multiplex.dispatch.deviceFunc1 = (pfn_deviceFunc1_t)(intptr_t)driver->platformGetFunc(platform, "deviceFunc1");
 		plt->multiplex.dispatch.deviceFunc2 = (pfn_deviceFunc2_t)(intptr_t)driver->platformGetFunc(platform, "deviceFunc2");
@@ -130,6 +143,37 @@ error:
 }
 
 static void
+loadLayer(const char *path) {
+	struct layer_s *layer = NULL;
+	void *lib = loadLibrary(path);
+	if (!lib)
+		return;
+	pfn_layerInit_t p_layerInit = (pfn_layerInit_t)(intptr_t)dlsym(lib, "layerInit");
+	if (!p_layerInit)
+		goto error;
+	layer = (struct layer_s *)calloc(1, sizeof(struct layer_s));
+	layer->library = lib;
+	size_t num_entries = 0;
+	struct dispatch_s *p_dispatch = NULL;
+	if (p_layerInit(NUM_DISPATCH_ENTRIES, &_first_layer->dispatch, &num_entries, &p_dispatch))
+		goto error;
+	size_t count = num_entries < NUM_DISPATCH_ENTRIES ? num_entries : NUM_DISPATCH_ENTRIES
+	for (size_t i = 0; i < count; i++) {
+		((void **)&(layer->dispatch))[i] = ((void **)p_dispatch)[i] ? ((void **)p_dispatch)[i] : ((void **)&(_first_layer->dispatch))[i];
+	}
+	for (size_t i = count; i < NUM_DISPATCH_ENTRIES; i++) {
+		((void **)&(layer->dispatch))[i] = ((void **)&(_first_layer->dispatch))[i];
+	}
+	layer->next = _first_layer;
+	_first_layer = layer;
+	return;
+error:
+	if (layer)
+		free(layer);
+	dlclose(lib);
+}
+
+static void
 initReal() {
 	char *drivers = getenv("DRIVERS");
 	if (drivers) {
@@ -140,6 +184,15 @@ initReal() {
 			loadDriver(cur_file);
 		}
 	}
+	char *layers = getenv("LAYERS");
+	if (layers) {
+		char *next_file = drivers;
+		while (NULL != next_file && *next_file != '\0') {
+			char *cur_file = next_file;
+			next_file = get_next(cur_file);
+			loadLayer(cur_file);
+		}
+	}
 }
 
 static void
@@ -147,8 +200,8 @@ initOnce(void) {
 	pthread_once(&initialized, initReal);
 }
 
-int
-getPlatforms(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
+static inline int
+getPlatforms_body(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
 	initOnce();
 	if (num_platforms_ret)
 		*num_platforms_ret = _num_platforms;
@@ -169,7 +222,17 @@ getPlatforms(size_t num_platforms, platform_t *platforms, size_t *num_platforms_
 }
 
 int
-platformCreateDevice(platform_t platform, device_t *device_ret) {
+getPlatforms(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
+	return _first_layer->dispatch.getPlatforms(num_platforms, platforms, num_platforms_ret);
+}
+
+static int
+getPlatforms_disp(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
+	return getPlatforms_body(num_platforms, platforms, num_platforms_ret);
+}
+
+static inline int
+platformCreateDevice_body(platform_t platform, device_t *device_ret) {
 	if (!platform)
 		return SPEC_ERROR;
 	if (!platform->multiplex->dispatch.platformCreateDevice)
@@ -182,7 +245,17 @@ platformCreateDevice(platform_t platform, device_t *device_ret) {
 }
 
 int
-deviceFunc1(device_t device, int param) {
+platformCreateDevice(platform_t platform, device_t *device_ret) {
+	return _first_layer->dispatch.platformCreateDevice(platform, device_ret);
+}
+
+static int
+platformCreateDevice_disp(platform_t platform, device_t *device_ret) {
+	return platformCreateDevice_body(platform, device_ret);
+}
+
+static inline int
+deviceFunc1_body(device_t device, int param) {
 	if (!device)
 		return SPEC_ERROR;
 	if (!device->multiplex->dispatch.deviceFunc1)
@@ -190,8 +263,16 @@ deviceFunc1(device_t device, int param) {
 	return device->multiplex->dispatch.deviceFunc1(device, param);
 }
 
-int
-deviceFunc2(device_t device, int param) {
+int deviceFunc1(device_t device, int param) {
+	return _first_layer->dispatch.deviceFunc1(device, param);
+}
+
+static int deviceFunc1_disp(device_t device, int param) {
+	return deviceFunc1_body(device, param);
+}
+
+static inline int
+deviceFunc2_body(device_t device, int param) {
 	if (!device)
 		return SPEC_ERROR;
 	if (!device->multiplex->dispatch.deviceFunc2)
@@ -200,7 +281,17 @@ deviceFunc2(device_t device, int param) {
 }
 
 int
-deviceDestroy(device_t device) {
+deviceFunc2(device_t device, int param) {
+	return _first_layer->dispatch.deviceFunc2(device, param);
+}
+
+static int
+deviceFunc2_disp(device_t device, int param) {
+	return deviceFunc2_body(device, param);
+}
+
+static inline int
+deviceDestroy_body(device_t device) {
 	if (!device)
 		return SPEC_ERROR;
 	if (!device->multiplex->dispatch.deviceDestroy)
@@ -208,9 +299,19 @@ deviceDestroy(device_t device) {
 	return device->multiplex->dispatch.deviceDestroy(device);
 }
 
+int
+deviceDestroy(device_t device) {
+	return _first_layer->dispatch.deviceDestroy(device);
+}
+
+static int
+deviceDestroy_disp(device_t device) {
+	return deviceDestroy_body(device);
+}
+
 __attribute__((destructor))
 void my_fini(void) {
-	printf("Deinitiing loader\n");
+	printf("Deiniting loader\n");
 	struct plt_s *platform = _first_platform;
 	while(platform) {
 		struct plt_s *next_platform = platform->next;
