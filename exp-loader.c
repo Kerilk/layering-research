@@ -19,13 +19,13 @@ deviceFunc2_disp(device_t device, int param);
 static int
 deviceDestroy_disp(device_t device);
 
-static struct dispatch_s _mdispatch = {
+/*static struct dispatch_s _mdispatch = {
 	&getPlatforms_disp,
 	&platformCreateDevice_disp,
 	&deviceFunc1_disp,
 	&deviceFunc2_disp,
 	&deviceDestroy_disp
-};
+};*/
 
 struct multiplex_s {
 	struct dispatch_s dispatch;
@@ -59,7 +59,15 @@ struct driver_s {
 };
 
 static struct layer_s _layer_terminator = {
-	NULL, _mdispatch, NULL
+	NULL,
+	{
+		&getPlatforms_disp,
+		&platformCreateDevice_disp,
+		&deviceFunc1_disp,
+		&deviceFunc2_disp,
+		&deviceDestroy_disp
+	},
+	NULL
 };
 static struct layer_s  *_first_layer = &_layer_terminator;
 static struct plt_s    *_first_platform = NULL;
@@ -157,7 +165,7 @@ loadLayer(const char *path) {
 	struct dispatch_s *p_dispatch = NULL;
 	if (p_layerInit(NUM_DISPATCH_ENTRIES, &_first_layer->dispatch, &num_entries, &p_dispatch))
 		goto error;
-	size_t count = num_entries < NUM_DISPATCH_ENTRIES ? num_entries : NUM_DISPATCH_ENTRIES
+	size_t count = num_entries < NUM_DISPATCH_ENTRIES ? num_entries : NUM_DISPATCH_ENTRIES;
 	for (size_t i = 0; i < count; i++) {
 		((void **)&(layer->dispatch))[i] = ((void **)p_dispatch)[i] ? ((void **)p_dispatch)[i] : ((void **)&(_first_layer->dispatch))[i];
 	}
@@ -186,7 +194,7 @@ initReal() {
 	}
 	char *layers = getenv("LAYERS");
 	if (layers) {
-		char *next_file = drivers;
+		char *next_file = layers;
 		while (NULL != next_file && *next_file != '\0') {
 			char *cur_file = next_file;
 			next_file = get_next(cur_file);
@@ -324,5 +332,12 @@ void my_fini(void) {
 		dlclose(driver->library);
 		free(driver);
 		driver = next_driver;
+	}
+	struct layer_s *layer = _first_layer;
+	while(layer != &_layer_terminator) {
+		struct layer_s *next_layer = layer->next;
+		dlclose(layer->library);
+		free(layer);
+		layer = next_layer;
 	}
 }

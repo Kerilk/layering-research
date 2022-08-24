@@ -19,6 +19,10 @@ int main() {
 	err = platformCreateDevice(platforms[0], &device);
 	printf("Created device = %p, err = %d\n", (void *)device, err);
 	assert(!err);
+	err = deviceFunc1(device, 0);
+	printf("Called deviceFunc1, err = %d\n", err);
+	err = deviceFunc2(device, 1);
+	printf("Called deviceFunc2, err = %d\n", err);
 	err = deviceDestroy(device);
 	printf("Destroyed device = %p, err = %d\n", (void *)device, err);
 	assert(!err);
