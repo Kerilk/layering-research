@@ -14,7 +14,7 @@ static void platformCreateDevice_ffi(
 	ffi_cif                              *cif,
 	int                                  *ffi_ret,
 	struct platformCreateDevice_ffi_args *args,
-	pfn_platformCreateDevice_t            platformCreateDevice_ptr);
+	void                                 *data);
 
 struct deviceFunc1_ffi_args {
 	device_t *p_device;
@@ -30,7 +30,7 @@ static void deviceFunc1_ffi(
 	ffi_cif                     *cif,
 	int                         *ffi_ret,
 	struct deviceFunc1_ffi_args *args,
-	pfn_deviceFunc1_t            deviceFunc1_ptr);
+	void                        *data);
 
 struct deviceFunc2_ffi_args {
 	device_t *p_device;
@@ -46,7 +46,7 @@ static void deviceFunc2_ffi(
 	ffi_cif                     *cif,
 	int                         *ffi_ret,
 	struct deviceFunc2_ffi_args *args,
-	pfn_deviceFunc2_t            deviceFunc2_ptr);
+	void                        *data);
 
 struct deviceDestroy_ffi_args {
 	device_t *p_device;
@@ -60,4 +60,4 @@ static void deviceDestroy_ffi(
 	ffi_cif                       *cif,
 	int                           *ffi_ret,
 	struct deviceDestroy_ffi_args *args,
-	pfn_deviceDestroy_t            deviceDestroy);
+	void                          *data);

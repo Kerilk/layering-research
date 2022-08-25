@@ -18,9 +18,17 @@ struct ffi_wrap_data {
 
 #define WRAPPER_NAME(api) api ## _ffi_wrap
 
+struct ffi_layer_data {
+	struct dispatch_s    *target_dispatch;
+	struct ffi_wrap_data  platformCreateDevice;
+	struct ffi_wrap_data  deviceFunc1;
+	struct ffi_wrap_data  deviceFunc2;
+	struct ffi_wrap_data  deviceDestroy;
+};
+
 #define DECLARE_WRAPPER(api) \
 static int \
-WRAPPER_NAME(api)(pfn_ ## api ## _t f_ptr, struct ffi_wrap_data *wrap_data, pfn_ ## api ## _t *f_ptr_ret)
+WRAPPER_NAME(api)(struct ffi_layer_data *layer_data, struct ffi_wrap_data *wrap_data, pfn_ ## api ## _t *f_ptr_ret)
 
 DECLARE_WRAPPER(platformCreateDevice);
 #if LAYER_NUMBER == 1
@@ -29,22 +37,15 @@ DECLARE_WRAPPER(deviceFunc1);
 DECLARE_WRAPPER(deviceFunc2);
 DECLARE_WRAPPER(deviceDestroy);
 
-struct ffi_layer_data {
-	struct ffi_wrap_data platformCreateDevice;
-	struct ffi_wrap_data deviceFunc1;
-	struct ffi_wrap_data deviceFunc2;
-	struct ffi_wrap_data deviceDestroy;
-};
-
 static inline int
 wrap_call(
-		void                  *pfun,
-		void                  *pfun_ffi,
-		unsigned int           nargs,
-		ffi_type              *rtype,
-		ffi_type             **atypes,
-		struct ffi_wrap_data  *wrap_data,
-		void                 **pfun_ret) {
+		struct ffi_layer_data  *layer_data,
+		void                   *pfun_ffi,
+		unsigned int            nargs,
+		ffi_type               *rtype,
+		ffi_type              **atypes,
+		struct ffi_wrap_data   *wrap_data,
+		void                  **pfun_ret) {
 	void *code;
 	wrap_data->closure = ffi_closure_alloc(
 		sizeof(ffi_closure), (void **)&code);
@@ -57,7 +58,7 @@ wrap_call(
 	status = ffi_prep_closure_loc(
 		wrap_data->closure, &wrap_data->cif,
 		(void (*)(ffi_cif *, void *, void **, void *))(intptr_t)pfun_ffi,
-		pfun, code);
+		(void *)layer_data, code);
 	if (FFI_OK != status)
 		goto error_closure;
 	*pfun_ret = code;
@@ -72,7 +73,7 @@ error:
 #define WRAPPER(api) \
 DECLARE_WRAPPER(api) { \
 	return wrap_call( \
-		(void *)(intptr_t) f_ptr, \
+		layer_data, \
 		(void *)(intptr_t)api ## _ffi, \
 		api ## _ffi_nargs, api ## _ffi_ret, api ## _ffi_types, \
 		wrap_data, (void **)f_ptr_ret); \
@@ -87,20 +88,27 @@ WRAPPER(deviceDestroy)
 
 #define WRAP(api) do { \
 	int res = WRAPPER_NAME(api)( \
-		target_dispatch->api, \
-		&data->api, \
+		layer_data, \
+		&layer_data->api, \
 		&layer_instance_dispatch->api); \
 	if (SPEC_SUCCESS != res) \
 		goto err_wrap; \
 } while (0)
 
+
+#define UNWRAP(api) do { \
+	if (layer_data->api.closure) \
+		ffi_closure_free(layer_data->api.closure); \
+} while (0)
+
 static inline void
-cleanup_closures(void *layer_data) {
-	size_t num_entries = sizeof(struct ffi_layer_data)/sizeof(struct ffi_wrap_data);
-	struct ffi_wrap_data *data = (struct ffi_wrap_data *)layer_data;
-	for (size_t i = 0; i < num_entries; i++)
-		if (data[i].closure)
-			ffi_closure_free(data[i].closure);
+cleanup_closures(struct ffi_layer_data *layer_data) {
+	UNWRAP(platformCreateDevice);
+#if LAYER_NUMBER == 1
+	UNWRAP(deviceFunc1);
+#endif
+	UNWRAP(deviceFunc2);
+	UNWRAP(deviceDestroy);
 }
 
 int layerInstanceInit(
@@ -114,9 +122,9 @@ int layerInstanceInit(
 		return SPEC_ERROR;
 	if (!target_dispatch || !layer_instance_dispatch || !layer_data_ret)
 		return SPEC_ERROR;
-	struct ffi_layer_data *data =
+	struct ffi_layer_data *layer_data =
 		(struct ffi_layer_data *)calloc(1, sizeof(struct ffi_layer_data));
-	if (!data)
+	if (!layer_data)
 		return SPEC_ERROR;
 	WRAP(platformCreateDevice);
 #if LAYER_NUMBER == 1
@@ -124,11 +132,12 @@ int layerInstanceInit(
 #endif
 	WRAP(deviceFunc2);
 	WRAP(deviceDestroy);
-	*layer_data_ret = (void *)data;
+	layer_data->target_dispatch = target_dispatch;
+	*layer_data_ret = (void *)layer_data;
 	return SPEC_SUCCESS;
 err_wrap:
-	cleanup_closures((void *)data);
-	free(data);
+	cleanup_closures(layer_data);
+	free(layer_data);
 	return SPEC_ERROR;
 }
 
@@ -136,7 +145,7 @@ int layerInstanceDeinit(
 		void *layer_data) {
 	printf("INSTANCE LAYER %d: entering layerInstanceDeinit(layer_data = %p)\n",
 		LAYER_NUMBER, (void *)layer_data);
-	cleanup_closures(layer_data);
+	cleanup_closures((struct ffi_layer_data *)layer_data);
 	free(layer_data);
 	return SPEC_SUCCESS;
 }
@@ -146,13 +155,14 @@ platformCreateDevice_ffi(
 		ffi_cif                              *cif,
 		int                                  *ffi_ret,
 		struct platformCreateDevice_ffi_args *args,
-		pfn_platformCreateDevice_t            platformCreateDevice_ptr) {
+		void                                 *data) {
 	(void)cif;
+	struct ffi_layer_data *layer_data = (struct ffi_layer_data *)data;
 	platform_t  platform = *args->p_platform;
 	device_t   *device_ret = *args->p_device_ret;
 	printf("INSTANCE LAYER %d: entering platformCreateDevice(platform = %p, device_ret = %p)\n",
 		LAYER_NUMBER, (void *)platform, (void *)device_ret);
-	int res = platformCreateDevice_ptr(platform, device_ret);
+	int res = layer_data->target_dispatch->platformCreateDevice(platform, device_ret);
 	printf("INSTANCE LAYER %d: leaving platformCreateDevice, result = %d, device_ret_val = %p\n",
 		LAYER_NUMBER, res, device_ret ? (void *)*device_ret : NULL);
 	*ffi_ret = res;
@@ -164,13 +174,14 @@ deviceFunc1_ffi(
 		ffi_cif                     *cif,
 		int                         *ffi_ret,
 		struct deviceFunc1_ffi_args *args,
-		pfn_deviceFunc1_t            deviceFunc1_ptr) {
+		void                        *data) {
 	(void)cif;
+	struct ffi_layer_data *layer_data = (struct ffi_layer_data *)data;
 	device_t device = *args->p_device;
 	int      param  = *args->p_param;
 	printf("INSTANCE LAYER %d: entering deviceFunc1(device = %p, param %d)\n",
 		LAYER_NUMBER, (void *)device, param);
-	int res = deviceFunc1_ptr(device, param);
+	int res = layer_data->target_dispatch->deviceFunc1(device, param);
 	printf("INSTANCE LAYER %d: leaving deviceFunc1, result = %d\n", LAYER_NUMBER, res);
 	*ffi_ret = res;
 }
@@ -181,13 +192,14 @@ deviceFunc2_ffi(
 		ffi_cif                     *cif,
 		int                         *ffi_ret,
 		struct deviceFunc2_ffi_args *args,
-		pfn_deviceFunc2_t            deviceFunc2_ptr) {
+		void                        *data) {
 	(void)cif;
+	struct ffi_layer_data *layer_data = (struct ffi_layer_data *)data;
 	device_t device = *args->p_device;
 	int      param  = *args->p_param;
 	printf("INSTANCE LAYER %d: entering deviceFunc2(device = %p, param %d)\n",
 		LAYER_NUMBER, (void *)device, param);
-	int res = deviceFunc2_ptr(device, param);
+	int res = layer_data->target_dispatch->deviceFunc2(device, param);
 	printf("INSTANCE LAYER %d: leaving deviceFunc2, result = %d\n", LAYER_NUMBER, res);
 	*ffi_ret = res;
 }
@@ -197,12 +209,13 @@ deviceDestroy_ffi(
 		ffi_cif                       *cif,
 		int                           *ffi_ret,
 		struct deviceDestroy_ffi_args *args,
-		pfn_deviceDestroy_t deviceDestroy_ptr) {
+		void                          *data) {
 	(void)cif;
+	struct ffi_layer_data *layer_data = (struct ffi_layer_data *)data;
 	device_t device = *args->p_device;
 	printf("INSTANCE LAYER %d: entering deviceDestroy(device = %p)\n",
 		LAYER_NUMBER, (void *)device);
-	int res = deviceDestroy_ptr(device);
+	int res = layer_data->target_dispatch->deviceDestroy(device);
 	printf("INSTANCE LAYER %d: leaving deviceDestroy, result = %d\n", LAYER_NUMBER, res);
 	*ffi_ret = res;
 }
