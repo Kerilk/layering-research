@@ -11,6 +11,8 @@
 static int
 getPlatforms_disp(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret);
 static int
+platformAddLayer_disp(platform_t platform, const char *layer_name);
+static int
 platformCreateDevice_disp(platform_t platform, device_t *device_ret);
 static int
 deviceFunc1_disp(device_t device, int param);
@@ -19,16 +21,26 @@ deviceFunc2_disp(device_t device, int param);
 static int
 deviceDestroy_disp(device_t device);
 
-/*static struct dispatch_s _mdispatch = {
-	&getPlatforms_disp,
-	&platformCreateDevice_disp,
-	&deviceFunc1_disp,
-	&deviceFunc2_disp,
-	&deviceDestroy_disp
-};*/
+static int
+getPlatforms_unsup(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret);
+static int
+platformAddLayer_unsup(platform_t platform, const char *layer_name);
+static int
+platformCreateDevice_unsup(platform_t platform, device_t *device_ret);
+static int
+deviceFunc1_unsup(device_t device, int param);
+static int
+deviceFunc2_unsup(device_t device, int param);
+static int
+deviceDestroy_unsup(device_t device);
 
-struct multiplex_s {
-	struct dispatch_s dispatch;
+static struct dispatch_s _unsup_dispatch = {
+	&getPlatforms_unsup,
+	&platformAddLayer_unsup,
+	&platformCreateDevice_unsup,
+	&deviceFunc1_unsup,
+	&deviceFunc2_unsup,
+	&deviceDestroy_unsup
 };
 
 struct layer_s;
@@ -36,6 +48,19 @@ struct layer_s {
 	void              *library;
 	struct dispatch_s  dispatch;
 	struct layer_s    *next;
+};
+
+struct instance_layer_s;
+struct instance_layer_s {
+	void                      *library;
+	void                      *data;
+	struct dispatch_s          dispatch;
+	struct instance_layer_s   *next;
+	pfn_layerInstanceDeinit_t  layerInstanceDeinit;
+};
+
+struct multiplex_s {
+	struct instance_layer_s *first_layer;
 };
 
 struct plt_s;
@@ -62,6 +87,7 @@ static struct layer_s _layer_terminator = {
 	NULL,
 	{
 		&getPlatforms_disp,
+		&platformAddLayer_disp,
 		&platformCreateDevice_disp,
 		&deviceFunc1_disp,
 		&deviceFunc2_disp,
@@ -102,14 +128,29 @@ char *get_next(char *paths) {
 static void
 loadPlatforms(struct driver_s *driver) {
 	for (size_t i = 0; i < driver->num_platforms; i++) {
-		struct plt_s *plt = (struct plt_s *)calloc(1, sizeof(struct plt_s));
+		struct plt_s *plt = (struct plt_s *)
+			calloc(1, sizeof(struct plt_s) + sizeof(struct instance_layer_s));
+		plt->multiplex.first_layer = (struct instance_layer_s*)
+			((char *)plt + sizeof(struct plt_s));
 		platform_t platform = driver->platforms[i];
 		plt->platform = platform;
-		plt->multiplex.dispatch.getPlatforms = NULL;
-		plt->multiplex.dispatch.platformCreateDevice = (pfn_platformCreateDevice_t)(intptr_t)driver->platformGetFunc(platform, "platformCreateDevice");
-		plt->multiplex.dispatch.deviceFunc1 = (pfn_deviceFunc1_t)(intptr_t)driver->platformGetFunc(platform, "deviceFunc1");
-		plt->multiplex.dispatch.deviceFunc2 = (pfn_deviceFunc2_t)(intptr_t)driver->platformGetFunc(platform, "deviceFunc2");
-		plt->multiplex.dispatch.deviceDestroy = (pfn_deviceDestroy_t)(intptr_t)driver->platformGetFunc(platform, "deviceDestroy");
+		plt->multiplex.first_layer->dispatch = _unsup_dispatch;
+		void *pfn = driver->platformGetFunc(platform, "platformCreateDevice");
+		if (pfn)
+			plt->multiplex.first_layer->dispatch.platformCreateDevice =
+				(pfn_platformCreateDevice_t)(intptr_t)pfn;
+		pfn = driver->platformGetFunc(platform, "deviceFunc1");
+		if (pfn)
+			plt->multiplex.first_layer->dispatch.deviceFunc1 =
+				(pfn_deviceFunc1_t)(intptr_t)pfn;
+		pfn = driver->platformGetFunc(platform, "deviceFunc2");
+		if (pfn)
+			plt->multiplex.first_layer->dispatch.deviceFunc2 =
+				(pfn_deviceFunc2_t)(intptr_t)pfn;
+		pfn = driver->platformGetFunc(platform, "deviceDestroy");
+		if (pfn)
+			plt->multiplex.first_layer->dispatch.deviceDestroy =
+				(pfn_deviceDestroy_t)(intptr_t)pfn;
 		plt->next = _first_platform;
 		plt->platform->multiplex = &plt->multiplex;
 		_first_platform = plt;
@@ -181,6 +222,40 @@ error:
 	dlclose(lib);
 }
 
+static int
+loadInstanceLayer(struct multiplex_s *multiplex, const char *path) {
+	struct instance_layer_s *layer = NULL;
+	void *lib = loadLibrary(path);
+	if (!lib)
+		goto error;
+	pfn_layerInstanceInit_t p_layerInstanceInit =
+		(pfn_layerInstanceInit_t)(intptr_t)dlsym(lib, "layerInstanceInit");
+	if (!p_layerInstanceInit)
+		goto error;
+	pfn_layerInstanceDeinit_t p_layerInstanceDeinit =
+		(pfn_layerInstanceDeinit_t)(intptr_t)dlsym(lib, "layerInstanceDeinit");
+	if (!p_layerInstanceDeinit)
+		goto error;
+	layer = (struct instance_layer_s *)calloc(1, sizeof(struct instance_layer_s));
+	layer->library = lib;
+	layer->layerInstanceDeinit = p_layerInstanceDeinit;
+	if (p_layerInstanceInit(NUM_DISPATCH_ENTRIES, &multiplex->first_layer->dispatch, &layer->dispatch, &layer->data))
+		goto error;
+	for (size_t i = 0; i < NUM_DISPATCH_ENTRIES; i++)
+		((void **)&(layer->dispatch))[i] =
+			((void **)&(layer->dispatch))[i] ?
+				((void **)&(layer->dispatch))[i] :
+				((void **)&(multiplex->first_layer->dispatch))[i];
+	layer->next = multiplex->first_layer;
+	multiplex->first_layer = layer;
+	return SPEC_SUCCESS;
+error:
+	if (layer)
+		free(layer);
+	dlclose(lib);
+	return SPEC_ERROR;
+}
+
 static void
 initReal() {
 	char *drivers = getenv("DRIVERS");
@@ -239,16 +314,43 @@ getPlatforms_disp(size_t num_platforms, platform_t *platforms, size_t *num_platf
 	return getPlatforms_body(num_platforms, platforms, num_platforms_ret);
 }
 
+static int
+getPlatforms_unsup(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
+	(void)num_platforms;
+	(void)platforms;
+	(void)num_platforms_ret;
+	return SPEC_UNSUPPORTED;
+}
+
+static inline int
+platformAddLayer_body(platform_t platform, const char *layer_name) {
+	return loadInstanceLayer(platform->multiplex, layer_name);
+}
+
+int
+platformAddLayer(platform_t platform, const char *layer_name) {
+	return _first_layer->dispatch.platformAddLayer(platform, layer_name);
+}
+
+static int
+platformAddLayer_disp(platform_t platform, const char *layer_name) {
+	return platformAddLayer_body(platform, layer_name);
+}
+
+static int
+platformAddLayer_unsup(platform_t platform, const char *layer_name) {
+	(void)platform;
+	(void)layer_name;
+	return SPEC_UNSUPPORTED;
+}
+
 static inline int
 platformCreateDevice_body(platform_t platform, device_t *device_ret) {
 	if (!platform)
 		return SPEC_ERROR;
-	if (!platform->multiplex->dispatch.platformCreateDevice)
-		return SPEC_UNSUPPORTED;
-	int result = platform->multiplex->dispatch.platformCreateDevice(platform, device_ret);
-	if (result == SPEC_SUCCESS) {
+	int result = platform->multiplex->first_layer->dispatch.platformCreateDevice(platform, device_ret);
+	if (result == SPEC_SUCCESS)
 		(*device_ret)->multiplex = platform->multiplex;
-	}
 	return result;
 }
 
@@ -262,30 +364,41 @@ platformCreateDevice_disp(platform_t platform, device_t *device_ret) {
 	return platformCreateDevice_body(platform, device_ret);
 }
 
+static int
+platformCreateDevice_unsup(platform_t platform, device_t *device_ret) {
+	(void)platform;
+	(void)device_ret;
+	return SPEC_UNSUPPORTED;
+}
+
 static inline int
 deviceFunc1_body(device_t device, int param) {
 	if (!device)
 		return SPEC_ERROR;
-	if (!device->multiplex->dispatch.deviceFunc1)
-		return SPEC_UNSUPPORTED;
-	return device->multiplex->dispatch.deviceFunc1(device, param);
+	return device->multiplex->first_layer->dispatch.deviceFunc1(device, param);
 }
 
 int deviceFunc1(device_t device, int param) {
 	return _first_layer->dispatch.deviceFunc1(device, param);
 }
 
-static int deviceFunc1_disp(device_t device, int param) {
+static int
+deviceFunc1_disp(device_t device, int param) {
 	return deviceFunc1_body(device, param);
+}
+
+static int
+deviceFunc1_unsup(device_t device, int param) {
+	(void)device;
+	(void)param;
+	return  SPEC_UNSUPPORTED;
 }
 
 static inline int
 deviceFunc2_body(device_t device, int param) {
 	if (!device)
 		return SPEC_ERROR;
-	if (!device->multiplex->dispatch.deviceFunc2)
-		return SPEC_UNSUPPORTED;
-	return device->multiplex->dispatch.deviceFunc2(device, param);
+	return device->multiplex->first_layer->dispatch.deviceFunc2(device, param);
 }
 
 int
@@ -298,13 +411,18 @@ deviceFunc2_disp(device_t device, int param) {
 	return deviceFunc2_body(device, param);
 }
 
+static int
+deviceFunc2_unsup(device_t device, int param) {
+	(void)device;
+	(void)param;
+	return SPEC_UNSUPPORTED;
+}
+
 static inline int
 deviceDestroy_body(device_t device) {
 	if (!device)
 		return SPEC_ERROR;
-	if (!device->multiplex->dispatch.deviceDestroy)
-		return SPEC_UNSUPPORTED;
-	return device->multiplex->dispatch.deviceDestroy(device);
+	return device->multiplex->first_layer->dispatch.deviceDestroy(device);
 }
 
 int
@@ -317,12 +435,26 @@ deviceDestroy_disp(device_t device) {
 	return deviceDestroy_body(device);
 }
 
+static int
+deviceDestroy_unsup(device_t device) {
+	(void)device;
+	return SPEC_UNSUPPORTED;
+}
+
 __attribute__((destructor))
 void my_fini(void) {
 	printf("Deiniting loader\n");
 	struct plt_s *platform = _first_platform;
 	while(platform) {
 		struct plt_s *next_platform = platform->next;
+		struct instance_layer_s *layer = platform->multiplex.first_layer;
+		while(layer->library) {
+			struct instance_layer_s *next_layer = layer->next;
+			layer->layerInstanceDeinit(layer->data);
+			dlclose(layer->library);
+			free(layer);
+			layer = next_layer;
+		}
 		free(platform);
 		platform = next_platform;
 	}

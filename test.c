@@ -3,6 +3,22 @@
 #include <assert.h>
 #include "spec.h"
 
+void test_platform(platform_t platform) {
+	device_t device;
+	int err;
+	printf("Testing platform %p\n", (void *)platform);
+	err = platformCreateDevice(platform, &device);
+	printf("Created device = %p, err = %d\n", (void *)device, err);
+	assert(!err);
+	err = deviceFunc1(device, 0);
+	printf("Called deviceFunc1, err = %d\n", err);
+	err = deviceFunc2(device, 1);
+	printf("Called deviceFunc2, err = %d\n", err);
+	err = deviceDestroy(device);
+	printf("Destroyed device = %p, err = %d\n", (void *)device, err);
+	assert(!err);
+}
+
 int main() {
 	size_t num_platforms = 0;
 	platform_t *platforms = NULL;
@@ -15,17 +31,12 @@ int main() {
 	err = getPlatforms(num_platforms, platforms, NULL);
 	printf("Got platforms, err = %d\n", err);
 	assert(!err);
-	device_t device;
-	err = platformCreateDevice(platforms[0], &device);
-	printf("Created device = %p, err = %d\n", (void *)device, err);
-	assert(!err);
-	err = deviceFunc1(device, 0);
-	printf("Called deviceFunc1, err = %d\n", err);
-	err = deviceFunc2(device, 1);
-	printf("Called deviceFunc2, err = %d\n", err);
-	err = deviceDestroy(device);
-	printf("Destroyed device = %p, err = %d\n", (void *)device, err);
-	assert(!err);
+	err = platformAddLayer(platforms[0], "libinstance_layer1.so");
+	printf("Added instance layer1, err = %d\n", err);
+	err = platformAddLayer(platforms[0], "libinstance_layer2.so");
+	printf("Added instance layer2, err = %d\n", err);
+	for (size_t i = 0; i < num_platforms; i++)
+		test_platform(platforms[i]);
 	free(platforms);
 	return 0;
 }

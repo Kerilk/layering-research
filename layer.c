@@ -23,6 +23,7 @@ deviceDestroy_wrap(device_t device);
 
 static struct dispatch_s _dispatch = {
 	&getPlatforms_wrap,
+	NULL,
 	&platformCreateDevice_wrap,
 #if LAYER_NUMBER == 1
 	&deviceFunc1_wrap,
