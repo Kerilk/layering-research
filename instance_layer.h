@@ -1,3 +1,4 @@
+#if FFI_INSTANCE_LAYERS
 #include <ffi.h>
 
 struct platformCreateDevice_ffi_args {
@@ -61,3 +62,5 @@ static void deviceDestroy_ffi(
 	int                           *ffi_ret,
 	struct deviceDestroy_ffi_args *args,
 	void                          *data);
+
+#endif //FFI_INSTANCE_LAYERS

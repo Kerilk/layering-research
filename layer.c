@@ -53,6 +53,13 @@ int layerInit(
 	return SPEC_SUCCESS;
 }
 
+#if LAYER_NUMBER == 1
+int layerDeinit() {
+	printf("LAYER %d: entering layerDeinit()\n", LAYER_NUMBER);
+	return SPEC_SUCCESS;
+}
+#endif
+
 static int
 getPlatforms_wrap(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
 	printf("LAYER %d: entering getPlatforms(num_platforms = %zu, platforms = %p, num_platforms_ret = %p)\n",
