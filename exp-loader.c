@@ -65,7 +65,27 @@ struct instance_layer_s {
 	pfn_layerInstanceDeinit_t  layerInstanceDeinit;
 };
 
-#if !FFI_INSTANCE_LAYERS
+static inline int platformCreateDevice_term(platform_t platform, device_t *device_ret);
+static inline int deviceFunc1_term(device_t device, int param);
+static inline int deviceFunc2_term(device_t device, int param);
+static inline int deviceDestroy_term(device_t device);
+
+#if FFI_INSTANCE_LAYERS
+static struct instance_layer_s _instance_layer_terminator = {
+	{
+		&getPlatforms_unsup,
+		&platformAddLayer_unsup,
+		&platformCreateDevice_term,
+		&deviceFunc1_term,
+		&deviceFunc2_term,
+		&deviceDestroy_term
+	},
+	NULL,
+	NULL,
+	NULL,
+	NULL
+};
+#else
 static int platformCreateDevice_inst(struct instance_layer_s *layer, platform_t platform, device_t *device_ret);
 static int deviceFunc1_inst(struct instance_layer_s *layer, device_t device, int param);
 static int deviceFunc2_inst(struct instance_layer_s *layer, device_t device, int param);
@@ -88,6 +108,7 @@ static struct instance_layer_s _instance_layer_terminator = {
 
 #if FFI_INSTANCE_LAYERS
 struct multiplex_s {
+	struct dispatch_s        dispatch;
 	struct instance_layer_s *first_layer;
 };
 #else
@@ -161,15 +182,9 @@ char *get_next(char *paths) {
 	return next;
 }
 
-#if FFI_INSTANCE_LAYERS
-#define SET_API(api) do { \
-	plt->multiplex.first_layer->dispatch.api = (pfn_ ## api ## _t)(intptr_t)pfn; \
-} while (0)
-#else
 #define SET_API(api) do { \
 	plt->multiplex.dispatch.api = (pfn_ ## api ## _t)(intptr_t)pfn; \
 } while (0)
-#endif
 
 #define GET_API(api) do { \
 	void *pfn = driver->platformGetFunc(platform, #api); \
@@ -181,16 +196,12 @@ static void
 loadPlatforms(struct driver_s *driver) {
 	for (size_t i = 0; i < driver->num_platforms; i++) {
 		struct plt_s *plt = (struct plt_s *)
-			calloc(1, sizeof(struct plt_s) + sizeof(struct instance_layer_s));
+			calloc(1, sizeof(struct plt_s));
 		platform_t platform = driver->platforms[i];
 		plt->platform = platform;
-#if FFI_INSTANCE_LAYERS
-		plt->multiplex.first_layer = (struct instance_layer_s*)
-			((char *)plt + sizeof(struct plt_s));
-		plt->multiplex.first_layer->dispatch = _unsup_dispatch;
-#else
 		plt->multiplex.first_layer = &_instance_layer_terminator;
 		plt->multiplex.dispatch = _unsup_dispatch;
+#if !FFI_INSTANCE_LAYERS
 		plt->multiplex.layer_dispatch.platformCreateDevice_next =
 			(struct instance_layer_proxy_s *)plt->multiplex.first_layer;
 		plt->multiplex.layer_dispatch.deviceFunc1_next =
@@ -423,10 +434,7 @@ static int
 platformCreateDevice_disp(platform_t platform, device_t *device_ret) {
 	if (!platform)
 		return SPEC_ERROR;
-	int result = CALL_FIRST_LAYER(platform, platformCreateDevice, platform, device_ret);
-	if (result == SPEC_SUCCESS)
-		(*device_ret)->multiplex = platform->multiplex;
-	return result;
+	return CALL_FIRST_LAYER(platform, platformCreateDevice, platform, device_ret);
 }
 
 static int
@@ -491,25 +499,48 @@ deviceDestroy_unsup(device_t device) {
 	return SPEC_UNSUPPORTED;
 }
 
+static inline int
+platformCreateDevice_term(platform_t platform, device_t *device_ret) {
+	int result = platform->multiplex->dispatch.platformCreateDevice(platform, device_ret);
+	if (result == SPEC_SUCCESS)
+		(*device_ret)->multiplex = platform->multiplex;
+	return result;
+}
+
+static inline int
+deviceFunc1_term(device_t device, int param) {
+	return device->multiplex->dispatch.deviceFunc1(device, param);
+}
+
+static inline int
+deviceFunc2_term(device_t device, int param) {
+	return device->multiplex->dispatch.deviceFunc2(device, param);
+}
+
+static inline int
+deviceDestroy_term(device_t device) {
+	return device->multiplex->dispatch.deviceDestroy(device);
+}
+
 #if !FFI_INSTANCE_LAYERS
 static int platformCreateDevice_inst(struct instance_layer_s *layer, platform_t platform, device_t *device_ret) {
 	(void)layer;
-	return platform->multiplex->dispatch.platformCreateDevice(platform, device_ret);
+	return platformCreateDevice_term(platform, device_ret);
 }
 
 static int deviceFunc1_inst(struct instance_layer_s *layer, device_t device, int param) {
 	(void)layer;
-	return device->multiplex->dispatch.deviceFunc1(device, param);
+	return deviceFunc1_term(device, param);
 }
 
 static int deviceFunc2_inst(struct instance_layer_s *layer, device_t device, int param) {
 	(void)layer;
-	return device->multiplex->dispatch.deviceFunc2(device, param);
+	return deviceFunc2_term(device, param);
 }
 
 static int deviceDestroy_inst(struct instance_layer_s *layer, device_t device) {
 	(void)layer;
-	return device->multiplex->dispatch.deviceDestroy(device);
+	return deviceDestroy_term(device);
 }
 #endif
 
