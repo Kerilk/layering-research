@@ -11,12 +11,17 @@
 #define DRIVER_NUMBER 1
 #endif
 
+#define DRIVER_LOG(format, ...) \
+do  { \
+	printf("DRIVER %d: " format "\n", DRIVER_NUMBER, __VA_ARGS__); \
+} while (0)
+
 static struct platform_s _platform;
 
 int
 getPlatformsExt(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
-	printf("DRIVER %d: entering getPlatformsExt(num_platforms = %zu, platforms = %p, num_platforms_ret = %p)\n",
-		DRIVER_NUMBER, num_platforms, (void *)platforms, (void *)num_platforms_ret);
+	DRIVER_LOG("entering getPlatformsExt(num_platforms = %zu, platforms = %p, num_platforms_ret = %p)",
+		num_platforms, (void *)platforms, (void *)num_platforms_ret);
 	if (num_platforms_ret)
 		*num_platforms_ret = 1;
 	if (num_platforms && platforms) {
@@ -31,21 +36,20 @@ getPlatformsExt(size_t num_platforms, platform_t *platforms, size_t *num_platfor
 
 static int
 platformCreateDevice(platform_t platform, device_t *device_ret) {
-	printf("DRIVER %d: entering platformCreateDevice(platform = %p, device_ret = %p)\n",
-		DRIVER_NUMBER, (void *)platform, (void *)device_ret);
+	DRIVER_LOG("entering platformCreateDevice(platform = %p, device_ret = %p)",
+		(void *)platform, (void *)device_ret);
 	if (platform != &_platform)
 		return SPEC_ERROR;
 	if (!device_ret)
 		return SPEC_ERROR;
 	*device_ret = (struct device_s *)calloc(1, sizeof(struct device_s));
-	printf("DRIVER %d: allocated device %p\n", DRIVER_NUMBER, (void *)*device_ret);
+	DRIVER_LOG("allocated device %p", (void *)*device_ret);
 	return SPEC_SUCCESS;
 }
 
 static int
 deviceFunc1(device_t device, int param) {
-	printf("DRIVER %d: entering deviceFunc1(device = %p, param %d)\n",
-		DRIVER_NUMBER, (void *)device, param);
+	DRIVER_LOG("entering deviceFunc1(device = %p, param %d)", (void *)device, param);
 	return SPEC_SUCCESS;
 }
 
@@ -53,24 +57,22 @@ deviceFunc1(device_t device, int param) {
 #if DRIVER_NUMBER == 1
 static int
 deviceFunc2(device_t device, int param) {
-	printf("DRIVER %d: entering deviceFunc2(device = %p, param %d)\n",
-		DRIVER_NUMBER, (void *)device, param);
+	DRIVER_LOG("entering deviceFunc2(device = %p, param %d)", (void *)device, param);
 	return SPEC_SUCCESS;
 }
 #endif
 
 static int
 deviceDestroy(device_t device) {
-	printf("DRIVER %d: entering deviceDestroy(device = %p)\n",
-		DRIVER_NUMBER, (void *)device);
+	DRIVER_LOG("entering deviceDestroy(device = %p)", (void *)device);
 	free((void *)device);
 	return SPEC_SUCCESS;
 }
 
 void *
 platformGetFunc(platform_t platform, const char *name) {
-	printf("DRIVER %d: entering platformGetFunc(platform = %p, name = %s)\n",
-		DRIVER_NUMBER, (void *)platform, name);
+	DRIVER_LOG("entering platformGetFunc(platform = %p, name = %s)",
+		(void *)platform, name);
 	if (platform != &_platform)
 		return NULL;
 	if (!name)
