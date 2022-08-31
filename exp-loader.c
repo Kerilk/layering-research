@@ -353,8 +353,13 @@ initOnce(void) {
 	pthread_once(&initialized, initReal);
 }
 
-static inline int
-getPlatforms_body(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
+int
+getPlatforms(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
+	return _first_layer->dispatch.getPlatforms(num_platforms, platforms, num_platforms_ret);
+}
+
+static int
+getPlatforms_disp(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
 	initOnce();
 	if (num_platforms_ret)
 		*num_platforms_ret = _num_platforms;
@@ -374,27 +379,12 @@ getPlatforms_body(size_t num_platforms, platform_t *platforms, size_t *num_platf
 	return SPEC_SUCCESS;
 }
 
-int
-getPlatforms(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
-	return _first_layer->dispatch.getPlatforms(num_platforms, platforms, num_platforms_ret);
-}
-
-static int
-getPlatforms_disp(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
-	return getPlatforms_body(num_platforms, platforms, num_platforms_ret);
-}
-
 static int
 getPlatforms_unsup(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
 	(void)num_platforms;
 	(void)platforms;
 	(void)num_platforms_ret;
 	return SPEC_UNSUPPORTED;
-}
-
-static inline int
-platformAddLayer_body(platform_t platform, const char *layer_name) {
-	return loadInstanceLayer(platform->multiplex, layer_name);
 }
 
 int
@@ -404,7 +394,7 @@ platformAddLayer(platform_t platform, const char *layer_name) {
 
 static int
 platformAddLayer_disp(platform_t platform, const char *layer_name) {
-	return platformAddLayer_body(platform, layer_name);
+	return loadInstanceLayer(platform->multiplex, layer_name);
 }
 
 static int
@@ -424,16 +414,6 @@ platformAddLayer_unsup(platform_t platform, const char *layer_name) {
 #define CALL_FIRST_LAYER(handle, api, ...) NEXT_ENTRY(handle, api)(NEXT_LAYER(handle, api), __VA_ARGS__)
 #endif
 
-static inline int
-platformCreateDevice_body(platform_t platform, device_t *device_ret) {
-	if (!platform)
-		return SPEC_ERROR;
-	int result = CALL_FIRST_LAYER(platform, platformCreateDevice, platform, device_ret);
-	if (result == SPEC_SUCCESS)
-		(*device_ret)->multiplex = platform->multiplex;
-	return result;
-}
-
 int
 platformCreateDevice(platform_t platform, device_t *device_ret) {
 	return _first_layer->dispatch.platformCreateDevice(platform, device_ret);
@@ -441,7 +421,12 @@ platformCreateDevice(platform_t platform, device_t *device_ret) {
 
 static int
 platformCreateDevice_disp(platform_t platform, device_t *device_ret) {
-	return platformCreateDevice_body(platform, device_ret);
+	if (!platform)
+		return SPEC_ERROR;
+	int result = CALL_FIRST_LAYER(platform, platformCreateDevice, platform, device_ret);
+	if (result == SPEC_SUCCESS)
+		(*device_ret)->multiplex = platform->multiplex;
+	return result;
 }
 
 static int
@@ -451,20 +436,15 @@ platformCreateDevice_unsup(platform_t platform, device_t *device_ret) {
 	return SPEC_UNSUPPORTED;
 }
 
-static inline int
-deviceFunc1_body(device_t device, int param) {
-	if (!device)
-		return SPEC_ERROR;
-	return CALL_FIRST_LAYER(device, deviceFunc1, device, param);
-}
-
 int deviceFunc1(device_t device, int param) {
 	return _first_layer->dispatch.deviceFunc1(device, param);
 }
 
 static int
 deviceFunc1_disp(device_t device, int param) {
-	return deviceFunc1_body(device, param);
+	if (!device)
+		return SPEC_ERROR;
+	return CALL_FIRST_LAYER(device, deviceFunc1, device, param);
 }
 
 static int
@@ -474,13 +454,6 @@ deviceFunc1_unsup(device_t device, int param) {
 	return  SPEC_UNSUPPORTED;
 }
 
-static inline int
-deviceFunc2_body(device_t device, int param) {
-	if (!device)
-		return SPEC_ERROR;
-	return CALL_FIRST_LAYER(device, deviceFunc2, device, param);
-}
-
 int
 deviceFunc2(device_t device, int param) {
 	return _first_layer->dispatch.deviceFunc2(device, param);
@@ -488,7 +461,9 @@ deviceFunc2(device_t device, int param) {
 
 static int
 deviceFunc2_disp(device_t device, int param) {
-	return deviceFunc2_body(device, param);
+	if (!device)
+		return SPEC_ERROR;
+	return CALL_FIRST_LAYER(device, deviceFunc2, device, param);
 }
 
 static int
@@ -498,13 +473,6 @@ deviceFunc2_unsup(device_t device, int param) {
 	return SPEC_UNSUPPORTED;
 }
 
-static inline int
-deviceDestroy_body(device_t device) {
-	if (!device)
-		return SPEC_ERROR;
-	return CALL_FIRST_LAYER(device, deviceDestroy, device);
-}
-
 int
 deviceDestroy(device_t device) {
 	return _first_layer->dispatch.deviceDestroy(device);
@@ -512,7 +480,9 @@ deviceDestroy(device_t device) {
 
 static int
 deviceDestroy_disp(device_t device) {
-	return deviceDestroy_body(device);
+	if (!device)
+		return SPEC_ERROR;
+	return CALL_FIRST_LAYER(device, deviceDestroy, device);
 }
 
 static int
