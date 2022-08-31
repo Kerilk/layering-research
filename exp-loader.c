@@ -417,20 +417,18 @@ platformAddLayer_unsup(platform_t platform, const char *layer_name) {
 #if FFI_INSTANCE_LAYERS
 #define NEXT_LAYER(handle, api) (handle->multiplex->first_layer)
 #define NEXT_ENTRY(handle, api) NEXT_LAYER(handle, api)->dispatch.api
+#define CALL_FIRST_LAYER(handle, api, ...) NEXT_ENTRY(handle, api)(__VA_ARGS__)
 #else
 #define NEXT_LAYER(handle, api) (handle->multiplex->layer_dispatch.api ## _next)
 #define NEXT_ENTRY(handle, api) NEXT_LAYER(handle, api)->dispatch.api ## _instance
+#define CALL_FIRST_LAYER(handle, api, ...) NEXT_ENTRY(handle, api)(NEXT_LAYER(handle, api), __VA_ARGS__)
 #endif
 
 static inline int
 platformCreateDevice_body(platform_t platform, device_t *device_ret) {
 	if (!platform)
 		return SPEC_ERROR;
-	int result = NEXT_ENTRY(platform, platformCreateDevice)(
-#if !FFI_INSTANCE_LAYERS
-		NEXT_LAYER(platform, platformCreateDevice),
-#endif
-		platform, device_ret);
+	int result = CALL_FIRST_LAYER(platform, platformCreateDevice, platform, device_ret);
 	if (result == SPEC_SUCCESS)
 		(*device_ret)->multiplex = platform->multiplex;
 	return result;
@@ -457,11 +455,7 @@ static inline int
 deviceFunc1_body(device_t device, int param) {
 	if (!device)
 		return SPEC_ERROR;
-	return NEXT_ENTRY(device, deviceFunc1)(
-#if !FFI_INSTANCE_LAYERS
-		NEXT_LAYER(device, deviceFunc1),
-#endif
-		device, param);
+	return CALL_FIRST_LAYER(device, deviceFunc1, device, param);
 }
 
 int deviceFunc1(device_t device, int param) {
@@ -484,11 +478,7 @@ static inline int
 deviceFunc2_body(device_t device, int param) {
 	if (!device)
 		return SPEC_ERROR;
-	return NEXT_ENTRY(device, deviceFunc2)(
-#if !FFI_INSTANCE_LAYERS
-		NEXT_LAYER(device, deviceFunc2),
-#endif
-		device, param);
+	return CALL_FIRST_LAYER(device, deviceFunc2, device, param);
 }
 
 int
@@ -512,11 +502,7 @@ static inline int
 deviceDestroy_body(device_t device) {
 	if (!device)
 		return SPEC_ERROR;
-	return NEXT_ENTRY(device, deviceDestroy)(
-#if !FFI_INSTANCE_LAYERS
-		NEXT_LAYER(device, deviceDestroy),
-#endif
-		device);
+	return CALL_FIRST_LAYER(device, deviceDestroy, device);
 }
 
 int
