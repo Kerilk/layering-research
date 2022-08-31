@@ -98,11 +98,15 @@ static int \
 WRAPPER_NAME(api)(struct ffi_layer_data *layer_data, struct ffi_wrap_data *wrap_data, pfn_ ## api ## _t *f_ptr_ret)
 
 DECLARE_WRAPPER(platformCreateDevice);
+static platformCreateDevice_ffi_t platformCreateDevice_ffi;
 #if LAYER_NUMBER == 1
 DECLARE_WRAPPER(deviceFunc1);
+static deviceFunc1_ffi_t deviceFunc1_ffi;
 #endif
 DECLARE_WRAPPER(deviceFunc2);
+static deviceFunc2_ffi_t deviceFunc2_ffi;
 DECLARE_WRAPPER(deviceDestroy);
+static deviceDestroy_ffi_t deviceDestroy_ffi;
 
 static inline int
 wrap_call(
