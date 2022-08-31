@@ -11,14 +11,16 @@
 #define LAYER_NUMBER 1
 #endif
 
-#if FFI_INSTANCE_LAYERS
+#define LAYER_LOG(format, ...) \
+do  { \
+	printf("INSTANCE LAYER %d: " format "\n", LAYER_NUMBER, __VA_ARGS__); \
+} while (0)
 
+#if FFI_INSTANCE_LAYERS
 struct ffi_wrap_data {
 	ffi_closure *closure;
 	ffi_cif      cif;
 };
-
-#define WRAPPER_NAME(api) api ## _ffi_wrap
 
 struct ffi_layer_data {
 	struct dispatch_s    *target_dispatch;
@@ -27,6 +29,69 @@ struct ffi_layer_data {
 	struct ffi_wrap_data  deviceFunc2;
 	struct ffi_wrap_data  deviceDestroy;
 };
+
+typedef struct ffi_layer_data instance_layer_t;
+#define CALL_NEXT_LAYER(layer, api, ...) layer->target_dispatch->api(__VA_ARGS__)
+
+#else //!FFI_INSTANCE_LAYERS
+
+typedef struct instance_layer_proxy_s instance_layer_t;
+#define NEXT_LAYER(layer, api) (layer->layer_dispatch.api ## _next)
+#define NEXT_ENTRY(layer, api) NEXT_LAYER(layer, api)->dispatch.api ## _instance
+#define CALL_NEXT_LAYER(layer, api, ...) NEXT_ENTRY(layer, api)(NEXT_LAYER(layer, api), __VA_ARGS__)
+
+#endif //!FFI_INSTANCE_LAYERS
+
+static inline int
+platformCreateDevice_instance(
+		instance_layer_t *layer,
+		platform_t        platform,
+		device_t         *device_ret) {
+	LAYER_LOG("entering platformCreateDevice(platform = %p, device_ret = %p)",
+		(void *)platform, (void *)device_ret);
+	int res = CALL_NEXT_LAYER(layer, platformCreateDevice, platform, device_ret);
+	LAYER_LOG("leaving platformCreateDevice, result = %d, device_ret_val = %p",
+		res, device_ret ? (void *)*device_ret : NULL);
+	return res;
+}
+
+#if LAYER_NUMBER == 1
+static inline int
+deviceFunc1_instance(
+		instance_layer_t *layer,
+		device_t          device,
+		int               param) {
+	LAYER_LOG("entering deviceFunc1(device = %p, param %d)", (void *)device, param);
+	int res = CALL_NEXT_LAYER(layer, deviceFunc1, device, param);
+	LAYER_LOG("eaving deviceFunc1, result = %d", res);
+	return res;
+}
+#endif
+
+static inline int
+deviceFunc2_instance(
+		instance_layer_t *layer,
+		device_t          device,
+		int               param) {
+	LAYER_LOG("entering deviceFunc2(device = %p, param %d)", (void *)device, param);
+	int res = CALL_NEXT_LAYER(layer, deviceFunc2, device, param);
+	LAYER_LOG("leaving deviceFunc2, result = %d", res);
+	return res;
+}
+
+static inline int
+deviceDestroy_instance(
+		instance_layer_t *layer,
+		device_t          device) {
+	LAYER_LOG("entering deviceDestroy(device = %p)", (void *)device);
+	int res = CALL_NEXT_LAYER(layer, deviceDestroy, device);
+	LAYER_LOG("leaving deviceDestroy, result = %d", res);
+	return res;
+}
+
+#if FFI_INSTANCE_LAYERS
+
+#define WRAPPER_NAME(api) api ## _ffi_wrap
 
 #define DECLARE_WRAPPER(api) \
 static int \
@@ -118,8 +183,8 @@ int layerInstanceInit(
 		struct dispatch_s  *target_dispatch,
 		struct dispatch_s  *layer_instance_dispatch,
 		void              **layer_data_ret) {
-	printf("INSTANCE LAYER %d: entering layerInit(num_entries = %zu, target_dispatch = %p, layer_instance_dispatch = %p, layer_data_ret = %p)\n",
-		LAYER_NUMBER, num_entries, (void *)target_dispatch, (void *)layer_instance_dispatch, (void *)layer_data_ret);
+	LAYER_LOG("entering layerInit(num_entries = %zu, target_dispatch = %p, layer_instance_dispatch = %p, layer_data_ret = %p)",
+		num_entries, (void *)target_dispatch, (void *)layer_instance_dispatch, (void *)layer_data_ret);
 	if (num_entries < NUM_DISPATCH_ENTRIES)
 		return SPEC_ERROR;
 	if (!target_dispatch || !layer_instance_dispatch || !layer_data_ret)
@@ -145,12 +210,12 @@ err_wrap:
 
 int layerInstanceDeinit(
 		void *layer_data) {
-	printf("INSTANCE LAYER %d: entering layerInstanceDeinit(layer_data = %p)\n",
-		LAYER_NUMBER, (void *)layer_data);
+	LAYER_LOG("entering layerInstanceDeinit(layer_data = %p)", (void *)layer_data);
 	cleanup_closures((struct ffi_layer_data *)layer_data);
 	free(layer_data);
 	return SPEC_SUCCESS;
 }
+
 
 static void
 platformCreateDevice_ffi(
@@ -159,15 +224,10 @@ platformCreateDevice_ffi(
 		struct platformCreateDevice_ffi_args *args,
 		void                                 *data) {
 	(void)cif;
-	struct ffi_layer_data *layer_data = (struct ffi_layer_data *)data;
+	instance_layer_t *layer_data = (instance_layer_t *)data;
 	platform_t  platform = *args->p_platform;
 	device_t   *device_ret = *args->p_device_ret;
-	printf("INSTANCE LAYER %d: entering platformCreateDevice(platform = %p, device_ret = %p)\n",
-		LAYER_NUMBER, (void *)platform, (void *)device_ret);
-	int res = layer_data->target_dispatch->platformCreateDevice(platform, device_ret);
-	printf("INSTANCE LAYER %d: leaving platformCreateDevice, result = %d, device_ret_val = %p\n",
-		LAYER_NUMBER, res, device_ret ? (void *)*device_ret : NULL);
-	*ffi_ret = res;
+	*ffi_ret = platformCreateDevice_instance(layer_data, platform, device_ret);
 }
 
 #if LAYER_NUMBER == 1
@@ -178,14 +238,10 @@ deviceFunc1_ffi(
 		struct deviceFunc1_ffi_args *args,
 		void                        *data) {
 	(void)cif;
-	struct ffi_layer_data *layer_data = (struct ffi_layer_data *)data;
+	instance_layer_t *layer_data = (instance_layer_t *)data;
 	device_t device = *args->p_device;
 	int      param  = *args->p_param;
-	printf("INSTANCE LAYER %d: entering deviceFunc1(device = %p, param %d)\n",
-		LAYER_NUMBER, (void *)device, param);
-	int res = layer_data->target_dispatch->deviceFunc1(device, param);
-	printf("INSTANCE LAYER %d: leaving deviceFunc1, result = %d\n", LAYER_NUMBER, res);
-	*ffi_ret = res;
+	*ffi_ret = deviceFunc1_instance(layer_data, device, param);
 }
 #endif
 
@@ -196,14 +252,10 @@ deviceFunc2_ffi(
 		struct deviceFunc2_ffi_args *args,
 		void                        *data) {
 	(void)cif;
-	struct ffi_layer_data *layer_data = (struct ffi_layer_data *)data;
+	instance_layer_t *layer_data = (instance_layer_t *)data;
 	device_t device = *args->p_device;
 	int      param  = *args->p_param;
-	printf("INSTANCE LAYER %d: entering deviceFunc2(device = %p, param %d)\n",
-		LAYER_NUMBER, (void *)device, param);
-	int res = layer_data->target_dispatch->deviceFunc2(device, param);
-	printf("INSTANCE LAYER %d: leaving deviceFunc2, result = %d\n", LAYER_NUMBER, res);
-	*ffi_ret = res;
+	*ffi_ret = deviceFunc2_instance(layer_data, device, param);
 }
 
 static void
@@ -213,23 +265,12 @@ deviceDestroy_ffi(
 		struct deviceDestroy_ffi_args *args,
 		void                          *data) {
 	(void)cif;
-	struct ffi_layer_data *layer_data = (struct ffi_layer_data *)data;
+	instance_layer_t *layer_data = (instance_layer_t *)data;
 	device_t device = *args->p_device;
-	printf("INSTANCE LAYER %d: entering deviceDestroy(device = %p)\n",
-		LAYER_NUMBER, (void *)device);
-	int res = layer_data->target_dispatch->deviceDestroy(device);
-	printf("INSTANCE LAYER %d: leaving deviceDestroy, result = %d\n", LAYER_NUMBER, res);
-	*ffi_ret = res;
+	*ffi_ret = deviceDestroy_instance(layer_data, device);
 }
 
 #else //!FFI_INSTANCE_LAYERS
-
-static platformCreateDevice_instance_t platformCreateDevice_instance;
-#if LAYER_NUMBER == 1
-static deviceFunc1_instance_t          deviceFunc1_instance;
-#endif
-static deviceFunc2_instance_t          deviceFunc2_instance;
-static deviceDestroy_instance_t        deviceDestroy_instance;
 
 static struct instance_dispatch_s _dispatch = {
 	&platformCreateDevice_instance,
@@ -246,8 +287,8 @@ int layerInstanceInit(
 		size_t                       num_entries,
 		struct instance_dispatch_s  *layer_instance_dispatch,
 		void                       **layer_data_ret) {
-	printf("INSTANCE LAYER %d: entering layerInit(num_entries = %zu, layer_instance_dispatch = %p, layer_data_ret = %p)\n",
-		LAYER_NUMBER, num_entries, (void *)layer_instance_dispatch, (void *)layer_data_ret);
+	LAYER_LOG("entering layerInit(num_entries = %zu, layer_instance_dispatch = %p, layer_data_ret = %p)",
+		num_entries, (void *)layer_instance_dispatch, (void *)layer_data_ret);
 	if (num_entries < NUM_INSTANCE_DISPATCH_ENTRIES)
 		return SPEC_ERROR;
 	if (!layer_instance_dispatch || !layer_data_ret)
@@ -260,66 +301,9 @@ int layerInstanceInit(
 
 int layerInstanceDeinit(
 		void *layer_data) {
-	printf("INSTANCE LAYER %d: entering layerInstanceDeinit(layer_data = %p)\n",
-		LAYER_NUMBER, (void *)layer_data);
+	LAYER_LOG("entering layerInstanceDeinit(layer_data = %p)", (void *)layer_data);
 	free(layer_data);
 	return SPEC_SUCCESS;
 }
 
-#define NEXT_LAYER(layer, api) (layer->layer_dispatch.api ## _next)
-#define NEXT_ENTRY(layer, api) NEXT_LAYER(layer, api)->dispatch.api ## _instance
-
-static int
-platformCreateDevice_instance(
-		struct instance_layer_proxy_s *layer,
-		platform_t                     platform,
-		device_t                      *device_ret) {
-	printf("INSTANCE LAYER %d: entering platformCreateDevice(platform = %p, device_ret = %p)\n",
-		LAYER_NUMBER, (void *)platform, (void *)device_ret);
-	int res = NEXT_ENTRY(layer, platformCreateDevice)(
-		NEXT_LAYER(layer, platformCreateDevice), platform, device_ret);
-	printf("INSTANCE LAYER %d: leaving platformCreateDevice, result = %d, device_ret_val = %p\n",
-		LAYER_NUMBER, res, device_ret ? (void *)*device_ret : NULL);
-	return res;
-}
-
-#if LAYER_NUMBER == 1
-static int
-deviceFunc1_instance(
-		struct instance_layer_proxy_s *layer,
-		device_t                       device,
-		int                            param) {
-	printf("INSTANCE LAYER %d: entering deviceFunc1(device = %p, param %d)\n",
-		LAYER_NUMBER, (void *)device, param);
-	int res = NEXT_ENTRY(layer, deviceFunc1)(
-		NEXT_LAYER(layer, deviceFunc1), device, param);
-	printf("INSTANCE LAYER %d: leaving deviceFunc1, result = %d\n", LAYER_NUMBER, res);
-	return res;
-}
-#endif
-
-static int
-deviceFunc2_instance(
-		struct instance_layer_proxy_s *layer,
-		device_t                       device,
-		int                            param) {
-	printf("INSTANCE LAYER %d: entering deviceFunc2(device = %p, param %d)\n",
-		LAYER_NUMBER, (void *)device, param);
-	int res = NEXT_ENTRY(layer, deviceFunc2)(
-		NEXT_LAYER(layer, deviceFunc2), device, param);
-	printf("INSTANCE LAYER %d: leaving deviceFunc2, result = %d\n", LAYER_NUMBER, res);
-	return res;
-}
-
-static int
-deviceDestroy_instance(
-		struct instance_layer_proxy_s *layer,
-		device_t                       device) {
-	printf("INSTANCE LAYER %d: entering deviceDestroy(device = %p)\n",
-		LAYER_NUMBER, (void *)device);
-	int res = NEXT_ENTRY(layer, deviceDestroy)(
-		NEXT_LAYER(layer, deviceDestroy), device);
-	printf("INSTANCE LAYER %d: leaving deviceDestroy, result = %d\n", LAYER_NUMBER, res);
-	return res;
-}
 #endif //FFI_INSTANCE_LAYERS
