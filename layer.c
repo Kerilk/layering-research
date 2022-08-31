@@ -3,6 +3,7 @@
 #include "dispatch.h"
 #include "layer.h"
 #include <stdio.h>
+#include <string.h>
 
 #ifndef LAYER_NUMBER
 #define LAYER_NUMBER 1
@@ -49,17 +50,15 @@ static struct dispatch_s *_target_dispatch = NULL;
 int layerInit(
 		size_t              num_entries,
 		struct dispatch_s  *target_dispatch,
-		size_t             *num_entries_ret,
-		struct dispatch_s **layer_dispatch_ret) {
-	LAYER_LOG("entering layerInit(num_entries = %zu, target_dispatch = %p, num_entries_ret = %p, layer_dispatch_ret = %p)",
-		num_entries, (void *)target_dispatch, (void *)num_entries_ret, (void *)layer_dispatch_ret);
+		struct dispatch_s  *layer_dispatch) {
+	LAYER_LOG("entering layerInit(num_entries = %zu, target_dispatch = %p, layer_dispatch = %p)",
+		num_entries, (void *)target_dispatch, (void *)layer_dispatch);
 	if (num_entries < NUM_DISPATCH_ENTRIES)
 		return SPEC_ERROR;
-	if (!target_dispatch || !num_entries_ret || !layer_dispatch_ret)
+	if (!target_dispatch || !layer_dispatch)
 		return SPEC_ERROR;
 	_target_dispatch = target_dispatch;
-	*num_entries_ret = NUM_DISPATCH_ENTRIES;
-	*layer_dispatch_ret = &_dispatch;
+	memcpy(layer_dispatch, &_dispatch, sizeof(_dispatch));
 	return SPEC_SUCCESS;
 }
 

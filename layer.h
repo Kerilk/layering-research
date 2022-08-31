@@ -7,8 +7,7 @@
 typedef int layerInit_t(
 	size_t              num_entries,
 	struct dispatch_s  *target_dispatch,
-	size_t             *num_entries_ret,
-	struct dispatch_s **layer_dispatch_ret);
+	struct dispatch_s  *layer_dispatch);
 
 typedef layerInit_t *pfn_layerInit_t;
 

@@ -266,17 +266,11 @@ loadLayer(const char *path) {
 		goto error;
 	layer = (struct layer_s *)calloc(1, sizeof(struct layer_s));
 	layer->library = lib;
-	size_t num_entries = 0;
-	struct dispatch_s *p_dispatch = NULL;
-	if (p_layerInit(NUM_DISPATCH_ENTRIES, &_first_layer->dispatch, &num_entries, &p_dispatch))
+	if (p_layerInit(NUM_DISPATCH_ENTRIES, &_first_layer->dispatch, &layer->dispatch))
 		goto error;
-	size_t count = num_entries < NUM_DISPATCH_ENTRIES ? num_entries : NUM_DISPATCH_ENTRIES;
-	for (size_t i = 0; i < count; i++) {
-		((void **)&(layer->dispatch))[i] = ((void **)p_dispatch)[i] ? ((void **)p_dispatch)[i] : ((void **)&(_first_layer->dispatch))[i];
-	}
-	for (size_t i = count; i < NUM_DISPATCH_ENTRIES; i++) {
-		((void **)&(layer->dispatch))[i] = ((void **)&(_first_layer->dispatch))[i];
-	}
+	for (size_t i = 0; i < NUM_DISPATCH_ENTRIES; i++)
+		if (!((void **)&(layer->dispatch))[i])
+			((void **)&(layer->dispatch))[i] = ((void **)&(_first_layer->dispatch))[i];
 	layer->next = _first_layer;
 	layer->layerDeinit = (pfn_layerDeinit_t)(intptr_t)dlsym(lib, "layerDeinit");
 	_first_layer = layer;
