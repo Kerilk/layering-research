@@ -8,6 +8,10 @@
 #include "dispatch.h"
 #include "layer.h"
 
+/**
+ * Terminators for the global layer chain, responsible for calling into the
+ * instance layer chain.
+ */
 static int
 getPlatforms_disp(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret);
 static int
@@ -21,6 +25,9 @@ deviceFunc2_disp(device_t device, int param);
 static int
 deviceDestroy_disp(device_t device);
 
+/**
+ * Stub functions for unimplemented APIs.
+ */
 static int
 getPlatforms_unsup(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret);
 static int
@@ -34,6 +41,9 @@ deviceFunc2_unsup(device_t device, int param);
 static int
 deviceDestroy_unsup(device_t device);
 
+/**
+ * A dispatch table to initialize platform dispatch table with.
+ */
 static struct dispatch_s _unsup_dispatch = {
 	&getPlatforms_unsup,
 	&platformAddLayer_unsup,
@@ -43,14 +53,22 @@ static struct dispatch_s _unsup_dispatch = {
 	&deviceDestroy_unsup
 };
 
+/**
+ * Global layer linked list element.
+ */
 struct layer_s;
 struct layer_s {
+	// dispatch table of the layer
 	struct dispatch_s  dispatch;
+	// next layer in the chain
 	struct layer_s    *next;
 	void              *library;
 	pfn_layerDeinit_t  layerDeinit;
 };
 
+/**
+ * Instance layer linked list element.
+ */
 struct instance_layer_s;
 struct instance_layer_s {
 #if FFI_INSTANCE_LAYERS

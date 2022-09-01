@@ -26,7 +26,8 @@ getPlatformsExt(size_t num_platforms, platform_t *platforms, size_t *num_platfor
 
 
 /**
- * Return an API entry point a for a given platform of this driver.
+ * Return an API entry point a for a given platform of this driver. (see OpenCL
+ * clGetExtensionFunctionAddressForPlatform)
  */
 void *
 platformGetFunc(platform_t platform, const char *name);

@@ -7,6 +7,19 @@
 #include "layer.h"
 #include "instance_layer.h"
 
+/**
+ * This file contains an implementation of the instance layer API defined in
+ * layer.h.  Several different layers can be created through the use of the
+ * LAYER_NUMBER macro definition.  The layer will only intercept deviceFunc1
+ * when LAYER_NUMBER == 1, showcasing the use of partial layering. Also none of
+ * them intercept platformAddLayer (not a limitation, they could). Depending on
+ * the FFI_INSTANCE_LAYERS macro definition the FFI or regular flavor of the
+ * layer will be built.
+ * The instance_layer.h file contains definitions for FFI layers that would be
+ * shared between layers written in FFI. Several other helper functions written
+ * here could also be included in this file.
+ */
+
 #ifndef LAYER_NUMBER
 #define LAYER_NUMBER 1
 #endif
@@ -17,6 +30,12 @@ do  { \
 } while (0)
 
 #if FFI_INSTANCE_LAYERS
+
+/**
+ * FFI layers rely on closures to join wrapper functions with a context.  The
+ * closures, and the target dispatch to call into, are the context of these
+ * instance layers, but this could be augmented with other information.
+ */
 struct ffi_wrap_data {
 	ffi_closure *closure;
 	ffi_cif      cif;
@@ -35,6 +54,16 @@ typedef struct ffi_layer_data instance_layer_t;
 
 #else //!FFI_INSTANCE_LAYERS
 
+/**
+ * Non FFI instance layers rely on a convention between the loader and the
+ * layers that a chain of instance layer will be composed of structures
+ * containing:
+ *  - an (possibly incomplete) instance dispatch table containing the layer
+ *    supported APIs wrappers
+ *  - a complete layer dispatch table containing links to the next layer for
+ *    each instance APIs
+ *  - a pointer to this layer internal instance data 
+ */
 typedef struct instance_layer_proxy_s instance_layer_t;
 #define NEXT_LAYER(layer, api) (layer->layer_dispatch.api ## _next)
 #define NEXT_ENTRY(layer, api) NEXT_LAYER(layer, api)->dispatch.api ## _instance
@@ -42,6 +71,10 @@ typedef struct instance_layer_proxy_s instance_layer_t;
 
 #endif //!FFI_INSTANCE_LAYERS
 
+/**
+ * These are the wrapper functions the layers should implement, their signature
+ * only differs from instance API calls in the extra first parameter.
+ */
 static inline int
 platformCreateDevice_instance(
 		instance_layer_t *layer,
@@ -91,6 +124,11 @@ deviceDestroy_instance(
 
 #if FFI_INSTANCE_LAYERS
 
+/**
+ * Using FFI requires an additional closure around the wrapper to capture the
+ * context. These closures will have the exact same interface as the API
+ * entry points being wrapped.
+ */
 #define WRAPPER_NAME(api) api ## _ffi_wrap
 
 #define DECLARE_WRAPPER(api) \
@@ -108,6 +146,20 @@ static deviceFunc2_ffi_t deviceFunc2_ffi;
 DECLARE_WRAPPER(deviceDestroy);
 static deviceDestroy_ffi_t deviceDestroy_ffi;
 
+/**
+ * This function realizes the ffi closures with the given argument types and
+ * return value type, plus a function to call (`pfun_ffi`) and the layer
+ * instance context `layer_data`. The layer entry point is returned in `pfun_ret`.
+ * For more details refer to the ffi documentation:
+ * http://www.chiark.greenend.org.uk/doc/libffi-dev/html/The-Closure-API.html
+ * http://www.chiark.greenend.org.uk/doc/libffi-dev/html/Closure-Example.html
+ *
+ * As it doesn't require cooperation between loader and layers (instance or
+ * global), FFI also allows wrapping arbitrary extension functions that would
+ * be obtained through calls similar to
+ * clGetExtensionFunctionAddressForPlatform.  This property is difficult to
+ * reach with other schemes.
+ */
 static inline int
 wrap_call(
 		struct ffi_layer_data  *layer_data,
@@ -141,6 +193,11 @@ error:
 	return SPEC_ERROR;
 }
 
+
+/**
+ * Create ffi wrapper funcions for each supported APIs using the data defined in
+ * inastance_layer.h.
+ */
 #define WRAPPER(api) \
 DECLARE_WRAPPER(api) { \
 	return wrap_call( \
@@ -172,6 +229,9 @@ WRAPPER(deviceDestroy)
 		ffi_closure_free(layer_data->api.closure); \
 } while (0)
 
+/**
+ * Destroy closures when cleaning up.
+ */
 static inline void
 cleanup_closures(struct ffi_layer_data *layer_data) {
 	UNWRAP(platformCreateDevice);
@@ -182,6 +242,13 @@ cleanup_closures(struct ffi_layer_data *layer_data) {
 	UNWRAP(deviceDestroy);
 }
 
+/**
+ * Instantiating FFI instance layers requires the same information as when
+ * instantiating  global layers. An additional context is returned that will
+ * provided back by the loader when this layer instance is deinited.
+ * Similarly, the dispatch table provided to write for the layer will be
+ * completed by the loader so doesn't need to be fully filled.
+ */
 int layerInstanceInit(
 		size_t              num_entries,
 		struct dispatch_s  *target_dispatch,
@@ -212,6 +279,9 @@ err_wrap:
 	return SPEC_ERROR;
 }
 
+/**
+ * Context clean up.
+ */
 int layerInstanceDeinit(
 		void *layer_data) {
 	LAYER_LOG("entering layerInstanceDeinit(layer_data = %p)", (void *)layer_data);
@@ -220,7 +290,9 @@ int layerInstanceDeinit(
 	return SPEC_SUCCESS;
 }
 
-
+/**
+ * FFI specific wrappers. Could be provided in instance_layer.h.
+ */
 static void
 platformCreateDevice_ffi(
 		ffi_cif                              *cif,
@@ -276,6 +348,10 @@ deviceDestroy_ffi(
 
 #else //!FFI_INSTANCE_LAYERS
 
+/** Instance layer without FFI are more straightforward, the loader/layer chain
+ * is responsible for correctly managing the cibtext along the chain.
+ */
+
 static struct instance_dispatch_s _dispatch = {
 	&platformCreateDevice_instance,
 #if LAYER_NUMBER == 1
@@ -287,6 +363,11 @@ static struct instance_dispatch_s _dispatch = {
 	&deviceDestroy_instance
 };
 
+/**
+ * Here the target dispatch is not required as it will be provided by the layer
+ * chain during layer invocation, so the layer reports its supported APis the
+ * usual way.
+ */
 int layerInstanceInit(
 		size_t                       num_entries,
 		struct instance_dispatch_s  *layer_instance_dispatch,
@@ -298,7 +379,7 @@ int layerInstanceInit(
 	if (!layer_instance_dispatch || !layer_data_ret)
 		return SPEC_ERROR;
 	*layer_instance_dispatch = _dispatch;
-	// for debug purposes
+	// for debug purposes here
 	*layer_data_ret = malloc(0x16);
 	return SPEC_SUCCESS;
 }

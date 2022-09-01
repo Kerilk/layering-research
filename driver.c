@@ -4,6 +4,14 @@
 #include <stdint.h>
 #include "driver-spec.h"
 
+/**
+ * This file contain the implementation of the driver specification given in
+ * driver-spec.h. It supports creating several different drivers using the
+ * DRIVER_NUMBER macro definition. only when DRIVER_NUMBER == 1 is the
+ * deviceFunc2 supported.  This allows demonstrating the robustness of the
+ * strategy toward unimplemented functions, which was problematic in OpenCL.
+ */
+
 #define SPEC_SUCCESS 0
 #define SPEC_ERROR -1
 
@@ -18,6 +26,10 @@ do  { \
 
 static struct platform_s _platform;
 
+/**
+ * Query available platforms in this driver (see OpenCL
+ * clIcdGetPlatformIDsKHR).  These drivers only implement a single platform.
+ */
 int
 getPlatformsExt(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
 	DRIVER_LOG("entering getPlatformsExt(num_platforms = %zu, platforms = %p, num_platforms_ret = %p)",
@@ -34,6 +46,10 @@ getPlatformsExt(size_t num_platforms, platform_t *platforms, size_t *num_platfor
 	return SPEC_SUCCESS;
 }
 
+/**
+ * API implementations are static as those symbols are not exported but queried
+ * through the platformGetFunc API.
+ */
 static int
 platformCreateDevice(platform_t platform, device_t *device_ret) {
 	DRIVER_LOG("entering platformCreateDevice(platform = %p, device_ret = %p)",
@@ -69,6 +85,13 @@ deviceDestroy(device_t device) {
 	return SPEC_SUCCESS;
 }
 
+
+/**
+ * Simple method query similar API to clGetExtensionFunctionAddressForPlatform.
+ * a signature of:
+ * int platformGetFunc(platform_t platform, const char *name, void **func_ret)
+ * could also be used here.
+ */
 void *
 platformGetFunc(platform_t platform, const char *name) {
 	DRIVER_LOG("entering platformGetFunc(platform = %p, name = %s)",
