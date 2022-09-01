@@ -18,20 +18,24 @@ A simple runscript is provided, `run.sh`, that uses valgrind for memory validati
 
 For reference, the expected output of the test, is supposed to look similar to this (irrespective of the version built):
 ```
-DRIVER 1: entering getPlatformsExt(num_platforms = 0, platforms = (nil), num_platforms_ret = 0x1ffefff8b0)
+DRIVER 1: entering getPlatformsExt(num_platforms = 0, platforms = (nil), num_platforms_ret = 0x1ffefff8f0)
 DRIVER 1: entering getPlatformsExt(num_platforms = 1, platforms = 0x4aad528, num_platforms_ret = (nil))
 DRIVER 1: entering platformGetFunc(platform = 0x4865048, name = platformCreateDevice)
 DRIVER 1: entering platformGetFunc(platform = 0x4865048, name = deviceFunc1)
 DRIVER 1: entering platformGetFunc(platform = 0x4865048, name = deviceFunc2)
 DRIVER 1: entering platformGetFunc(platform = 0x4865048, name = deviceDestroy)
-DRIVER 2: entering getPlatformsExt(num_platforms = 0, platforms = (nil), num_platforms_ret = 0x1ffefff8b0)
+DRIVER 2: entering getPlatformsExt(num_platforms = 0, platforms = (nil), num_platforms_ret = 0x1ffefff8f0)
 DRIVER 2: entering getPlatformsExt(num_platforms = 1, platforms = 0x4aae6f8, num_platforms_ret = (nil))
 DRIVER 2: entering platformGetFunc(platform = 0x486a048, name = platformCreateDevice)
 DRIVER 2: entering platformGetFunc(platform = 0x486a048, name = deviceFunc1)
 DRIVER 2: entering platformGetFunc(platform = 0x486a048, name = deviceFunc2)
 DRIVER 2: entering platformGetFunc(platform = 0x486a048, name = deviceDestroy)
-LAYER 1: entering layerInit(num_entries = 6, target_dispatch = 0x4860140, num_entries_ret = 0x1ffefff898, layer_dispatch_ret = 0x1ffefff8a0)
-LAYER 2: entering layerInit(num_entries = 6, target_dispatch = 0x4aaef60, num_entries_ret = 0x1ffefff898, layer_dispatch_ret = 0x1ffefff8a0)
+LAYER 1: entering layerInit(num_entries = 6, target_dispatch = 0x4860160, layer_dispatch = 0x4aaef60)
+LAYER 2: entering layerInit(num_entries = 6, target_dispatch = 0x4aaef60, layer_dispatch = 0x4aaf730)
+LAYER 2: entering getPlatforms(num_platforms = 0, platforms = (nil), num_platforms_ret = 0x1ffefffa20)
+LAYER 1: entering getPlatforms(num_platforms = 0, platforms = (nil), num_platforms_ret = 0x1ffefffa20)
+LAYER 1: leaving getPlatforms, result = 0
+LAYER 2: leaving getPlatforms, result = 0
 Found 2 platforms, err = 0
 LAYER 2: entering getPlatforms(num_platforms = 2, platforms = 0x4aaf8b0, num_platforms_ret = (nil))
 LAYER 1: entering getPlatforms(num_platforms = 2, platforms = 0x4aaf8b0, num_platforms_ret = (nil))

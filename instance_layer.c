@@ -12,8 +12,9 @@
  * layer.h.  Several different layers can be created through the use of the
  * LAYER_NUMBER macro definition.  The layer will only intercept deviceFunc1
  * when LAYER_NUMBER == 1, showcasing the use of partial layering. Also none of
- * them intercept platformAddLayer (not a limitation, they could). Depending on
- * the FFI_INSTANCE_LAYERS macro definition the FFI or regular flavor of the
+ * them intercept platformAddLayer as it is provided by the loader and not the
+ * drivers. Depending on the FFI_INSTANCE_LAYERS macro definition the FFI or
+ * regular flavor of the
  * layer will be built.
  * The instance_layer.h file contains definitions for FFI layers that would be
  * shared between layers written in FFI. Several other helper functions written

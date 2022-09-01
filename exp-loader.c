@@ -26,7 +26,7 @@ static int
 deviceDestroy_disp(device_t device);
 
 /**
- * Stub functions for unimplemented APIs.
+ * Stub functions for unimplemented APIs (or APIs not supported by the driver).
  */
 static int
 getPlatforms_unsup(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret);
@@ -83,12 +83,17 @@ struct instance_layer_s {
 	pfn_layerInstanceDeinit_t  layerInstanceDeinit;
 };
 
+/**
+ * Terminators for driver provided API entry points.  These will effectively
+ * dispatch to the correct driver after the instance layer chain.
+ */
 static inline int platformCreateDevice_term(platform_t platform, device_t *device_ret);
 static inline int deviceFunc1_term(device_t device, int param);
 static inline int deviceFunc2_term(device_t device, int param);
 static inline int deviceDestroy_term(device_t device);
 
 #if FFI_INSTANCE_LAYERS
+/* The terminator for ffi instance layer */
 static struct instance_layer_s _instance_layer_terminator = {
 	{
 		&getPlatforms_unsup,
@@ -109,6 +114,7 @@ static int deviceFunc1_inst(struct instance_layer_s *layer, device_t device, int
 static int deviceFunc2_inst(struct instance_layer_s *layer, device_t device, int param);
 static int deviceDestroy_inst(struct instance_layer_s *layer, device_t device);
 
+/* The terminator for non FFI instance layer */
 static struct instance_layer_s _instance_layer_terminator = {
 	{
 		(pfn_platformCreateDevice_instance_t)&platformCreateDevice_inst,
@@ -122,21 +128,35 @@ static struct instance_layer_s _instance_layer_terminator = {
 	NULL,
 	NULL
 };
+
+/* The initializer for the layer dispatch */
+static struct layer_dispatch_s _instance_layer_dispatch_head = {
+	(struct instance_layer_proxy_s *)&_instance_layer_terminator,
+	(struct instance_layer_proxy_s *)&_instance_layer_terminator,
+	(struct instance_layer_proxy_s *)&_instance_layer_terminator,
+	(struct instance_layer_proxy_s *)&_instance_layer_terminator
+};
 #endif
 
-#if FFI_INSTANCE_LAYERS
+/**
+ * Every opaque handle from the API will be set to point to the multiplex_s
+ * structure. This structure will contain the object dispatch table, as well as
+ * a pointer to the start of the instance layer chain.
+ * For non FFI instance layers, it will also contain the first layer dispatch
+ * indirection table.
+ */
 struct multiplex_s {
 	struct dispatch_s        dispatch;
 	struct instance_layer_s *first_layer;
-};
-#else
-struct multiplex_s {
-	struct dispatch_s        dispatch;
-	struct instance_layer_s *first_layer;
+#if !FFI_INSTANCE_LAYERS
 	struct layer_dispatch_s  layer_dispatch;
-};
 #endif
+};
 
+/**
+ * Platform linked list element. Object created from platform and their descendants will reference
+ * the platform's multiplexing structure.
+ */
 struct plt_s;
 struct plt_s {
 	platform_t          platform;
@@ -144,9 +164,15 @@ struct plt_s {
 	struct plt_s       *next;
 };
 
+/**
+ * Definition of driver entry points.
+ */
 typedef int (*pfn_getPaltfomsExt_t)(size_t num_platform, platform_t *platforms, size_t *num_platform_ret);
 typedef void * (*pfn_platformGetFunc_t)(platform_t platform, const char *name);
 
+/**
+ * Driver linked list element.
+ */
 struct driver_s;
 struct driver_s {
 	void                  *library;
@@ -157,6 +183,9 @@ struct driver_s {
 	struct driver_s       *next;
 };
 
+/**
+ * Global layer terminator.
+ */
 static struct layer_s _layer_terminator = {
 	{
 		&getPlatforms_disp,
@@ -170,11 +199,18 @@ static struct layer_s _layer_terminator = {
 	NULL,
 	NULL
 };
+
+/**
+ * Linked lists entry points.
+ */
 static struct layer_s  *_first_layer = &_layer_terminator;
+static struct driver_s *_first_driver = NULL;
 static struct plt_s    *_first_platform = NULL;
 static size_t           _num_platforms = 0;
-static struct driver_s *_first_driver = NULL;
 
+/**
+ * (Opaque) will be made to point to platform multiplexing structure.
+ */
 struct platform_s {
 	struct multiplex_s *multiplex;
 };
@@ -210,6 +246,9 @@ char *get_next(char *paths) {
 		SET_API(api); \
 } while (0)
 
+/**
+ * Load platforms from a driver, and insert them into the platform list.
+ */
 static void
 loadPlatforms(struct driver_s *driver) {
 	for (size_t i = 0; i < driver->num_platforms; i++) {
@@ -217,29 +256,31 @@ loadPlatforms(struct driver_s *driver) {
 			calloc(1, sizeof(struct plt_s));
 		platform_t platform = driver->platforms[i];
 		plt->platform = platform;
-		plt->multiplex.first_layer = &_instance_layer_terminator;
+		/* Initialize dispatch table and instance layer chains */
 		plt->multiplex.dispatch = _unsup_dispatch;
+		plt->multiplex.first_layer = &_instance_layer_terminator;
 #if !FFI_INSTANCE_LAYERS
-		plt->multiplex.layer_dispatch.platformCreateDevice_next =
-			(struct instance_layer_proxy_s *)plt->multiplex.first_layer;
-		plt->multiplex.layer_dispatch.deviceFunc1_next =
-			(struct instance_layer_proxy_s *)plt->multiplex.first_layer;
-		plt->multiplex.layer_dispatch.deviceFunc2_next =
-			(struct instance_layer_proxy_s *)plt->multiplex.first_layer;
-		plt->multiplex.layer_dispatch.deviceDestroy_next =
-			(struct instance_layer_proxy_s *)plt->multiplex.first_layer;
+		plt->multiplex.layer_dispatch = _instance_layer_dispatch_head;
 #endif
+		/* fill dispatch table */
 		GET_API(platformCreateDevice);
 		GET_API(deviceFunc1);
 		GET_API(deviceFunc2);
 		GET_API(deviceDestroy);
-		plt->next = _first_platform;
+		/* setup multiplex reference */
 		plt->platform->multiplex = &plt->multiplex;
+		/* Insert platform into platform list */
+		plt->next = _first_platform;
 		_first_platform = plt;
 		_num_platforms++;
 	}
 }
 
+/**
+ * Load a driver given it's library path, checking driver provide the two apis
+ * defined in driver-spec.h, and that getPaltfomsExt does indeed return a
+ * platform.
+ */
 static void
 loadDriver(const char *path) {
 	struct driver_s *driver = NULL;
@@ -273,6 +314,10 @@ error:
 	dlclose(lib);
 }
 
+/**
+ * Load a global layer library given its path, and try to initialize it. If
+ * successful insert it into the global layer list.
+ */
 static void
 loadLayer(const char *path) {
 	struct layer_s *layer = NULL;
@@ -299,6 +344,10 @@ error:
 	dlclose(lib);
 }
 
+/**
+ * Load an instance layer library into a multiplexing structure, inserting it
+ * in front of the instance layer chain.
+ */
 static int
 loadInstanceLayer(struct multiplex_s *multiplex, const char *path) {
 	struct instance_layer_s *layer = NULL;
@@ -327,17 +376,25 @@ loadInstanceLayer(struct multiplex_s *multiplex, const char *path) {
 	if (res)
 		goto error;
 #if FFI_INSTANCE_LAYERS
+	/**
+	 * FFI instance layer's dispatch tables are completed so that the next
+ 	 * layer can benefit from a full table
+	 */
 	for (size_t i = 0; i < num_entries; i++)
 		((void **)&(layer->dispatch))[i] =
 			((void **)&(layer->dispatch))[i] ?
 				((void **)&(layer->dispatch))[i] :
 				((void **)&(multiplex->first_layer->dispatch))[i];
 #else
+	/**
+	 * Non FFI instance layer need to copy then update the layer_dispatch
+	 * table with the entries they provide.  This allows the layer chain to
+	 * provide the correct context to each layer.
+	 */
 	layer->layer_dispatch = multiplex->layer_dispatch;
 	for (size_t i = 0; i < num_entries; i++)
 		if (((void **)&(layer->dispatch))[i])
-			((struct instance_layer_s **)&(multiplex->layer_dispatch))[i] =
-				layer;
+			((struct instance_layer_s **)&(multiplex->layer_dispatch))[i] = layer;
 #endif
 	layer->next = multiplex->first_layer;
 	multiplex->first_layer = layer;
@@ -349,6 +406,10 @@ error:
 	return SPEC_ERROR;
 }
 
+/**
+ * Load drivers and global layers, both lists provided in colon separated list
+ * given by environment variables.
+ */
 static void
 initReal() {
 	char *drivers = getenv("DRIVERS");
@@ -376,14 +437,44 @@ initOnce(void) {
 	pthread_once(&initialized, initReal);
 }
 
+/**
+ * API entry points
+ */
 int
 getPlatforms(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
+	initOnce();
 	return _first_layer->dispatch.getPlatforms(num_platforms, platforms, num_platforms_ret);
 }
 
+int
+platformAddLayer(platform_t platform, const char *layer_name) {
+	return _first_layer->dispatch.platformAddLayer(platform, layer_name);
+}
+
+int
+platformCreateDevice(platform_t platform, device_t *device_ret) {
+	return _first_layer->dispatch.platformCreateDevice(platform, device_ret);
+}
+
+int deviceFunc1(device_t device, int param) {
+	return _first_layer->dispatch.deviceFunc1(device, param);
+}
+
+int
+deviceFunc2(device_t device, int param) {
+	return _first_layer->dispatch.deviceFunc2(device, param);
+}
+
+int
+deviceDestroy(device_t device) {
+	return _first_layer->dispatch.deviceDestroy(device);
+}
+
+/**
+ * Global layer terminators.
+ */
 static int
 getPlatforms_disp(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
-	initOnce();
 	if (num_platforms_ret)
 		*num_platforms_ret = _num_platforms;
 	if (num_platforms && platforms) {
@@ -403,29 +494,14 @@ getPlatforms_disp(size_t num_platforms, platform_t *platforms, size_t *num_platf
 }
 
 static int
-getPlatforms_unsup(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
-	(void)num_platforms;
-	(void)platforms;
-	(void)num_platforms_ret;
-	return SPEC_UNSUPPORTED;
-}
-
-int
-platformAddLayer(platform_t platform, const char *layer_name) {
-	return _first_layer->dispatch.platformAddLayer(platform, layer_name);
-}
-
-static int
 platformAddLayer_disp(platform_t platform, const char *layer_name) {
 	return loadInstanceLayer(platform->multiplex, layer_name);
 }
 
-static int
-platformAddLayer_unsup(platform_t platform, const char *layer_name) {
-	(void)platform;
-	(void)layer_name;
-	return SPEC_UNSUPPORTED;
-}
+/**
+ * For driver implemented APIs, the global terminator call into the instance
+ * layer chain.
+ */
 
 #if FFI_INSTANCE_LAYERS
 #define NEXT_LAYER(handle, api) (handle->multiplex->first_layer)
@@ -437,27 +513,11 @@ platformAddLayer_unsup(platform_t platform, const char *layer_name) {
 #define CALL_FIRST_LAYER(handle, api, ...) NEXT_ENTRY(handle, api)(NEXT_LAYER(handle, api), __VA_ARGS__)
 #endif
 
-int
-platformCreateDevice(platform_t platform, device_t *device_ret) {
-	return _first_layer->dispatch.platformCreateDevice(platform, device_ret);
-}
-
 static int
 platformCreateDevice_disp(platform_t platform, device_t *device_ret) {
 	if (!platform)
 		return SPEC_ERROR;
 	return CALL_FIRST_LAYER(platform, platformCreateDevice, platform, device_ret);
-}
-
-static int
-platformCreateDevice_unsup(platform_t platform, device_t *device_ret) {
-	(void)platform;
-	(void)device_ret;
-	return SPEC_UNSUPPORTED;
-}
-
-int deviceFunc1(device_t device, int param) {
-	return _first_layer->dispatch.deviceFunc1(device, param);
 }
 
 static int
@@ -468,34 +528,10 @@ deviceFunc1_disp(device_t device, int param) {
 }
 
 static int
-deviceFunc1_unsup(device_t device, int param) {
-	(void)device;
-	(void)param;
-	return  SPEC_UNSUPPORTED;
-}
-
-int
-deviceFunc2(device_t device, int param) {
-	return _first_layer->dispatch.deviceFunc2(device, param);
-}
-
-static int
 deviceFunc2_disp(device_t device, int param) {
 	if (!device)
 		return SPEC_ERROR;
 	return CALL_FIRST_LAYER(device, deviceFunc2, device, param);
-}
-
-static int
-deviceFunc2_unsup(device_t device, int param) {
-	(void)device;
-	(void)param;
-	return SPEC_UNSUPPORTED;
-}
-
-int
-deviceDestroy(device_t device) {
-	return _first_layer->dispatch.deviceDestroy(device);
 }
 
 static int
@@ -505,15 +541,60 @@ deviceDestroy_disp(device_t device) {
 	return CALL_FIRST_LAYER(device, deviceDestroy, device);
 }
 
+/**
+ * Unsupported API stubs.
+ */
+
+static int
+platformAddLayer_unsup(platform_t platform, const char *layer_name) {
+	(void)platform;
+	(void)layer_name;
+	return SPEC_UNSUPPORTED;
+}
+
+static int
+getPlatforms_unsup(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
+	(void)num_platforms;
+	(void)platforms;
+	(void)num_platforms_ret;
+	return SPEC_UNSUPPORTED;
+}
+
+static int
+platformCreateDevice_unsup(platform_t platform, device_t *device_ret) {
+	(void)platform;
+	(void)device_ret;
+	return SPEC_UNSUPPORTED;
+}
+
+static int
+deviceFunc1_unsup(device_t device, int param) {
+	(void)device;
+	(void)param;
+	return  SPEC_UNSUPPORTED;
+}
+
+static int
+deviceFunc2_unsup(device_t device, int param) {
+	(void)device;
+	(void)param;
+	return SPEC_UNSUPPORTED;
+}
+
 static int
 deviceDestroy_unsup(device_t device) {
 	(void)device;
 	return SPEC_UNSUPPORTED;
 }
 
+/**
+ * Instance layer terminators either directly (for FFI layers) or indirectly
+ * (for non-FFI layers).
+ */
 static inline int
 platformCreateDevice_term(platform_t platform, device_t *device_ret) {
 	int result = platform->multiplex->dispatch.platformCreateDevice(platform, device_ret);
+	/* Devices inherit from the platfom multiplex structure reference */
 	if (result == SPEC_SUCCESS)
 		(*device_ret)->multiplex = platform->multiplex;
 	return result;
@@ -534,6 +615,9 @@ deviceDestroy_term(device_t device) {
 	return device->multiplex->dispatch.deviceDestroy(device);
 }
 
+/**
+ * Non ffi instance layer terminators.
+ */
 #if !FFI_INSTANCE_LAYERS
 static int platformCreateDevice_inst(struct instance_layer_s *layer, platform_t platform, device_t *device_ret) {
 	(void)layer;
@@ -556,6 +640,10 @@ static int deviceDestroy_inst(struct instance_layer_s *layer, device_t device) {
 }
 #endif
 
+/**
+ * Loader cleanup. If called explicitly at program termination, valgrind should
+ * report no leak. as is in a destructor, valgrind reports leaks.
+ */
 __attribute__((destructor))
 void my_fini(void) {
 	printf("Deiniting loader\n");
