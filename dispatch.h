@@ -1,3 +1,8 @@
+/**
+ * Definition of the dispatch table used by the loader and layers.
+ * It gathers all the API entry points defined inn spec.h in a structure.
+ */
+
 typedef int (*pfn_getPlatforms_t)(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret);
 typedef int (*pfn_platformAddLayer_t)(platform_t platform, const char *layer_name);
 typedef int (*pfn_platformCreateDevice_t)(platform_t platform, device_t *device_ret);
