@@ -41,9 +41,7 @@ deviceDestroy_unsup(device_t device);
  * A dispatch table to initialize platform dispatch table with.
  * NULL entries are loader only APIs and should never be called.
  */
-static struct dispatch_s _unsup_dispatch = {
-	NULL,
-	NULL,
+static struct driver_dispatch_s _unsup_dispatch = {
 	&platformCreateDevice_unsup,
 	&deviceFunc1_unsup,
 	&deviceFunc2_unsup,
@@ -139,10 +137,10 @@ static struct layer_dispatch_s _instance_layer_dispatch_head = {
  * indirection table.
  */
 struct multiplex_s {
-	struct dispatch_s        dispatch;
-	struct instance_layer_s *first_layer;
+	struct driver_dispatch_s  dispatch;
+	struct instance_layer_s  *first_layer;
 #if !FFI_INSTANCE_LAYERS
-	struct layer_dispatch_s  layer_dispatch;
+	struct layer_dispatch_s   layer_dispatch;
 #endif
 };
 
