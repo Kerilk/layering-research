@@ -159,19 +159,19 @@ struct plt_s {
  * Definition of driver entry points.
  */
 typedef int (*pfn_getPaltfomsExt_t)(size_t num_platform, platform_t *platforms, size_t *num_platform_ret);
-typedef void * (*pfn_platformGetFunc_t)(platform_t platform, const char *name);
+typedef void * (*pfn_platformGetFuncExt_t)(platform_t platform, const char *name);
 
 /**
  * Driver linked list element.
  */
 struct driver_s;
 struct driver_s {
-	void                  *library;
-	pfn_getPaltfomsExt_t   getPaltfomsExt;
-	pfn_platformGetFunc_t  platformGetFunc;
-	size_t                 num_platforms;
-	platform_t            *platforms;
-	struct driver_s       *next;
+	void                     *library;
+	pfn_getPaltfomsExt_t      getPaltfomsExt;
+	pfn_platformGetFuncExt_t  platformGetFuncExt;
+	size_t                    num_platforms;
+	platform_t               *platforms;
+	struct driver_s          *next;
 };
 
 /**
@@ -232,7 +232,7 @@ char *get_next(char *paths) {
 } while (0)
 
 #define GET_API(api) do { \
-	void *pfn = driver->platformGetFunc(platform, #api); \
+	void *pfn = driver->platformGetFuncExt(platform, #api); \
 	if (pfn) \
 		SET_API(api); \
 } while (0)
@@ -282,15 +282,15 @@ loadDriver(const char *path) {
 	pfn_getPaltfomsExt_t p_getPaltfomsExt = (pfn_getPaltfomsExt_t)(intptr_t)dlsym(lib, "getPlatformsExt");
 	if (!p_getPaltfomsExt)
 		goto error;
-	pfn_platformGetFunc_t p_platformGetFunc = (pfn_platformGetFunc_t)(intptr_t)dlsym(lib, "platformGetFunc");
-	if (!p_platformGetFunc)
+	pfn_platformGetFuncExt_t p_platformGetFuncExt = (pfn_platformGetFuncExt_t)(intptr_t)dlsym(lib, "platformGetFuncExt");
+	if (!p_platformGetFuncExt)
 		goto error;
 	if (p_getPaltfomsExt(0, NULL, &num_platforms) || !num_platforms)
 		goto error;
 	driver = (struct driver_s *)calloc(1, sizeof(struct driver_s) + num_platforms * sizeof(platform_t));
 	driver->library = lib;
 	driver->getPaltfomsExt = p_getPaltfomsExt;
-	driver->platformGetFunc = p_platformGetFunc;
+	driver->platformGetFuncExt = p_platformGetFuncExt;
 	driver->num_platforms = num_platforms;
 	driver->platforms = (platform_t *)((intptr_t)driver + sizeof(struct platform_s));
 	if (p_getPaltfomsExt(num_platforms, driver->platforms, NULL))
@@ -371,9 +371,8 @@ loadInstanceLayer(struct multiplex_s *multiplex, const char *path) {
  	 * layer can benefit from a full table
 	 */
 	for (size_t i = 0; i < num_entries; i++)
-		((void **)&(layer->dispatch))[i] =
-			((void **)&(layer->dispatch))[i] ?
-				((void **)&(layer->dispatch))[i] :
+		if (!((void **)&(layer->dispatch))[i])
+			((void **)&(layer->dispatch))[i] =
 				((void **)&(multiplex->first_layer->dispatch))[i];
 #else
 	/**

@@ -30,4 +30,4 @@ getPlatformsExt(size_t num_platforms, platform_t *platforms, size_t *num_platfor
  * clGetExtensionFunctionAddressForPlatform)
  */
 void *
-platformGetFunc(platform_t platform, const char *name);
+platformGetFuncExt(platform_t platform, const char *name);

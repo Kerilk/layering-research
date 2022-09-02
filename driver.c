@@ -89,12 +89,12 @@ deviceDestroy(device_t device) {
 /**
  * Simple method query similar API to clGetExtensionFunctionAddressForPlatform.
  * a signature of:
- * int platformGetFunc(platform_t platform, const char *name, void **func_ret)
+ * int platformGetFuncExt(platform_t platform, const char *name, void **func_ret)
  * could also be used here.
  */
 void *
-platformGetFunc(platform_t platform, const char *name) {
-	DRIVER_LOG("entering platformGetFunc(platform = %p, name = %s)",
+platformGetFuncExt(platform_t platform, const char *name) {
+	DRIVER_LOG("entering platformGetFuncExt(platform = %p, name = %s)",
 		(void *)platform, name);
 	if (platform != &_platform)
 		return NULL;

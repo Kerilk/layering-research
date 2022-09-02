@@ -20,7 +20,7 @@ struct dispatch_s {
 };
 
 /**
- * Dispatch tables that gather APIs that driver implement.
+ * Dispatch tables that gather APIs that drivers implement.
  * Use by the loader to dispatch driver calls.
  */
 struct driver_dispatch_s {
