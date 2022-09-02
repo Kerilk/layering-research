@@ -26,12 +26,8 @@ static int
 deviceDestroy_disp(device_t device);
 
 /**
- * Stub functions for unimplemented APIs (or APIs not supported by the driver).
+ * Stub functions for unimplemented APIs.
  */
-static int
-getPlatforms_unsup(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret);
-static int
-platformAddLayer_unsup(platform_t platform, const char *layer_name);
 static int
 platformCreateDevice_unsup(platform_t platform, device_t *device_ret);
 static int
@@ -43,10 +39,11 @@ deviceDestroy_unsup(device_t device);
 
 /**
  * A dispatch table to initialize platform dispatch table with.
+ * NULL entries are loader only APIs and should never be called.
  */
 static struct dispatch_s _unsup_dispatch = {
-	&getPlatforms_unsup,
-	&platformAddLayer_unsup,
+	NULL,
+	NULL,
 	&platformCreateDevice_unsup,
 	&deviceFunc1_unsup,
 	&deviceFunc2_unsup,
@@ -71,10 +68,8 @@ struct layer_s {
  */
 struct instance_layer_s;
 struct instance_layer_s {
-#if FFI_INSTANCE_LAYERS
-	struct dispatch_s          dispatch;
-#else
 	struct instance_dispatch_s dispatch;
+#if !FFI_INSTANCE_LAYERS
 	struct layer_dispatch_s    layer_dispatch;
 #endif
 	void                      *data;
@@ -96,8 +91,6 @@ static inline int deviceDestroy_term(device_t device);
 /* The terminator for ffi instance layer */
 static struct instance_layer_s _instance_layer_terminator = {
 	{
-		&getPlatforms_unsup,
-		&platformAddLayer_unsup,
 		&platformCreateDevice_term,
 		&deviceFunc1_term,
 		&deviceFunc2_term,
@@ -366,12 +359,11 @@ loadInstanceLayer(struct multiplex_s *multiplex, const char *path) {
 	layer->library = lib;
 	layer->layerInstanceDeinit = p_layerInstanceDeinit;
 	int res;
+	const size_t num_entries = NUM_INSTANCE_DISPATCH_ENTRIES;
 #if FFI_INSTANCE_LAYERS
-	const size_t num_entries = NUM_DISPATCH_ENTRIES;
 	res = p_layerInstanceInit(num_entries, &multiplex->first_layer->dispatch, &layer->dispatch, &layer->data);
 #else
-	const size_t num_entries = NUM_INSTANCE_DISPATCH_ENTRIES;
-	res = p_layerInstanceInit(num_entries,  &layer->dispatch, &layer->data);
+	res = p_layerInstanceInit(num_entries, &layer->dispatch, &layer->data);
 #endif
 	if (res)
 		goto error;
@@ -473,6 +465,10 @@ deviceDestroy(device_t device) {
 /**
  * Global layer terminators.
  */
+
+/**
+ * The first two are loader implemented APIs and don't call into drivers.
+ */
 static int
 getPlatforms_disp(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
 	if (num_platforms_ret)
@@ -505,7 +501,7 @@ platformAddLayer_disp(platform_t platform, const char *layer_name) {
 
 #if FFI_INSTANCE_LAYERS
 #define NEXT_LAYER(handle, api) (handle->multiplex->first_layer)
-#define NEXT_ENTRY(handle, api) NEXT_LAYER(handle, api)->dispatch.api
+#define NEXT_ENTRY(handle, api) NEXT_LAYER(handle, api)->dispatch.api ## _instance
 #define CALL_FIRST_LAYER(handle, api, ...) NEXT_ENTRY(handle, api)(__VA_ARGS__)
 #else
 #define NEXT_LAYER(handle, api) (handle->multiplex->layer_dispatch.api ## _next)
@@ -544,22 +540,6 @@ deviceDestroy_disp(device_t device) {
 /**
  * Unsupported API stubs.
  */
-
-static int
-platformAddLayer_unsup(platform_t platform, const char *layer_name) {
-	(void)platform;
-	(void)layer_name;
-	return SPEC_UNSUPPORTED;
-}
-
-static int
-getPlatforms_unsup(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret) {
-	(void)num_platforms;
-	(void)platforms;
-	(void)num_platforms_ret;
-	return SPEC_UNSUPPORTED;
-}
-
 static int
 platformCreateDevice_unsup(platform_t platform, device_t *device_ret) {
 	(void)platform;

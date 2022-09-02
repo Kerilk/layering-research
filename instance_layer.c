@@ -43,15 +43,16 @@ struct ffi_wrap_data {
 };
 
 struct ffi_layer_data {
-	struct dispatch_s    *target_dispatch;
-	struct ffi_wrap_data  platformCreateDevice;
-	struct ffi_wrap_data  deviceFunc1;
-	struct ffi_wrap_data  deviceFunc2;
-	struct ffi_wrap_data  deviceDestroy;
+	struct instance_dispatch_s *target_dispatch;
+	struct ffi_wrap_data        platformCreateDevice;
+	struct ffi_wrap_data        deviceFunc1;
+	struct ffi_wrap_data        deviceFunc2;
+	struct ffi_wrap_data        deviceDestroy;
 };
 
 typedef struct ffi_layer_data instance_layer_t;
-#define CALL_NEXT_LAYER(layer, api, ...) layer->target_dispatch->api(__VA_ARGS__)
+#define NEXT_ENTRY(layer, api) layer->target_dispatch->api ## _instance
+#define CALL_NEXT_LAYER(layer, api, ...) NEXT_ENTRY(layer, api)(__VA_ARGS__)
 
 #else //!FFI_INSTANCE_LAYERS
 
@@ -219,7 +220,7 @@ WRAPPER(deviceDestroy)
 	int res = WRAPPER_NAME(api)( \
 		layer_data, \
 		&layer_data->api, \
-		&layer_instance_dispatch->api); \
+		&layer_instance_dispatch->api ##_instance); \
 	if (SPEC_SUCCESS != res) \
 		goto err_wrap; \
 } while (0)
@@ -251,13 +252,13 @@ cleanup_closures(struct ffi_layer_data *layer_data) {
  * completed by the loader so doesn't need to be fully filled.
  */
 int layerInstanceInit(
-		size_t              num_entries,
-		struct dispatch_s  *target_dispatch,
-		struct dispatch_s  *layer_instance_dispatch,
-		void              **layer_data_ret) {
+		size_t                       num_entries,
+		struct instance_dispatch_s  *target_dispatch,
+		struct instance_dispatch_s  *layer_instance_dispatch,
+		void                       **layer_data_ret) {
 	LAYER_LOG("entering layerInit(num_entries = %zu, target_dispatch = %p, layer_instance_dispatch = %p, layer_data_ret = %p)",
 		num_entries, (void *)target_dispatch, (void *)layer_instance_dispatch, (void *)layer_data_ret);
-	if (num_entries < NUM_DISPATCH_ENTRIES)
+	if (num_entries < NUM_INSTANCE_DISPATCH_ENTRIES)
 		return SPEC_ERROR;
 	if (!target_dispatch || !layer_instance_dispatch || !layer_data_ret)
 		return SPEC_ERROR;

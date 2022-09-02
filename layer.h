@@ -30,7 +30,25 @@ typedef int layerDeinit_t();
 
 typedef layerDeinit_t *pfn_layerDeinit_t;
 
+/**
+ * Dispatch table for instance layer.
+ * Contains driver implemented API entry points.
+ */
+struct instance_dispatch_s;
+
 #if FFI_INSTANCE_LAYERS
+
+typedef pfn_platformCreateDevice_t pfn_platformCreateDevice_instance_t;
+typedef pfn_deviceFunc1_t          pfn_deviceFunc1_instance_t;
+typedef pfn_deviceFunc2_t          pfn_deviceFunc2_instance_t;
+typedef pfn_deviceDestroy_t        pfn_deviceDestroy_instance_t;
+
+struct instance_dispatch_s {
+	pfn_platformCreateDevice_instance_t platformCreateDevice_instance;
+	pfn_deviceFunc1_instance_t          deviceFunc1_instance;
+	pfn_deviceFunc2_instance_t          deviceFunc2_instance;
+	pfn_deviceDestroy_instance_t        deviceDestroy_instance;
+};
 
 /**
  * Instance Layer initialization for FFI instance layers.  Similar to layerInit
@@ -38,10 +56,10 @@ typedef layerDeinit_t *pfn_layerDeinit_t;
  * in layer_data_ret.
  */
 typedef int layerInstanceInit_t(
-	size_t              num_entries,
-	struct dispatch_s  *target_dispatch,
-	struct dispatch_s  *layer_instance_dispatch,
-	void              **layer_data_ret);
+	size_t                       num_entries,
+	struct instance_dispatch_s  *target_dispatch,
+	struct instance_dispatch_s  *layer_instance_dispatch,
+	void                       **layer_data_ret);
 
 #else //!FFI_INSTANCE_LAYERS
 
@@ -110,8 +128,6 @@ struct instance_layer_proxy_s {
 	void                          *data;
 };
 
-#define NUM_INSTANCE_DISPATCH_ENTRIES (sizeof(struct instance_dispatch_s)/sizeof(pfn_layerInit_t))
-
 /**
  * Initialization if a non FFI instance layer. Here, the loader is responsible
  * for maintaining the call chain through the instance layers, so the target
@@ -124,6 +140,8 @@ typedef int layerInstanceInit_t(
 	void                       **layer_data_ret);
 
 #endif //FFI_INSTANCE_LAYERS
+
+#define NUM_INSTANCE_DISPATCH_ENTRIES (sizeof(struct instance_dispatch_s)/sizeof(pfn_layerInit_t))
 
 typedef layerInstanceInit_t *pfn_layerInstanceInit_t;
 
