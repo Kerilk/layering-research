@@ -158,7 +158,7 @@ struct plt_s {
 /**
  * Definition of driver entry points.
  */
-typedef int (*pfn_getPaltfomsExt_t)(size_t num_platform, platform_t *platforms, size_t *num_platform_ret);
+typedef int (*pfn_getPlatformsExt_t)(size_t num_platform, platform_t *platforms, size_t *num_platform_ret);
 typedef void * (*pfn_platformGetFuncExt_t)(platform_t platform, const char *name);
 
 /**
@@ -167,7 +167,7 @@ typedef void * (*pfn_platformGetFuncExt_t)(platform_t platform, const char *name
 struct driver_s;
 struct driver_s {
 	void                     *library;
-	pfn_getPaltfomsExt_t      getPaltfomsExt;
+	pfn_getPlatformsExt_t     getPlatformsExt;
 	pfn_platformGetFuncExt_t  platformGetFuncExt;
 	size_t                    num_platforms;
 	platform_t               *platforms;
@@ -269,7 +269,7 @@ loadPlatforms(struct driver_s *driver) {
 
 /**
  * Load a driver given it's library path, checking driver provide the two apis
- * defined in driver-spec.h, and that getPaltfomsExt does indeed return a
+ * defined in driver-spec.h, and that getPlatformsExt does indeed return a
  * platform.
  */
 static void
@@ -279,21 +279,21 @@ loadDriver(const char *path) {
 	void *lib = loadLibrary(path);
 	if (!lib)
 		return;
-	pfn_getPaltfomsExt_t p_getPaltfomsExt = (pfn_getPaltfomsExt_t)(intptr_t)dlsym(lib, "getPlatformsExt");
-	if (!p_getPaltfomsExt)
+	pfn_getPlatformsExt_t p_getPlatformsExt = (pfn_getPlatformsExt_t)(intptr_t)dlsym(lib, "getPlatformsExt");
+	if (!p_getPlatformsExt)
 		goto error;
 	pfn_platformGetFuncExt_t p_platformGetFuncExt = (pfn_platformGetFuncExt_t)(intptr_t)dlsym(lib, "platformGetFuncExt");
 	if (!p_platformGetFuncExt)
 		goto error;
-	if (p_getPaltfomsExt(0, NULL, &num_platforms) || !num_platforms)
+	if (p_getPlatformsExt(0, NULL, &num_platforms) || !num_platforms)
 		goto error;
 	driver = (struct driver_s *)calloc(1, sizeof(struct driver_s) + num_platforms * sizeof(platform_t));
 	driver->library = lib;
-	driver->getPaltfomsExt = p_getPaltfomsExt;
+	driver->getPlatformsExt = p_getPlatformsExt;
 	driver->platformGetFuncExt = p_platformGetFuncExt;
 	driver->num_platforms = num_platforms;
 	driver->platforms = (platform_t *)((intptr_t)driver + sizeof(struct platform_s));
-	if (p_getPaltfomsExt(num_platforms, driver->platforms, NULL))
+	if (p_getPlatformsExt(num_platforms, driver->platforms, NULL))
 		goto error;
 	loadPlatforms(driver);
 	driver->next = _first_driver;
