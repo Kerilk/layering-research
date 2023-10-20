@@ -440,23 +440,51 @@ platformAddLayer(platform_t platform, const char *layer_name) {
 	return _first_layer->dispatch.platformAddLayer(platform, layer_name);
 }
 
+/**
+ * For driver implemented APIs, the global entry point calls into the instance
+ * layer chain.
+ */
+
+#if FFI_INSTANCE_LAYERS
+#define NEXT_LAYER(handle, api) (handle->multiplex->first_layer)
+#define NEXT_ENTRY(handle, api) NEXT_LAYER(handle, api)->dispatch.api ## _instance
+#define CALL_FIRST_LAYER(handle, api, ...) NEXT_ENTRY(handle, api)(__VA_ARGS__)
+#else
+#define NEXT_LAYER(handle, api) (handle->multiplex->layer_dispatch.api ## _next)
+#define NEXT_ENTRY(handle, api) NEXT_LAYER(handle, api)->dispatch.api ## _instance
+#define CALL_FIRST_LAYER(handle, api, ...) NEXT_ENTRY(handle, api)(NEXT_LAYER(handle, api), __VA_ARGS__)
+#endif
+
 int
 platformCreateDevice(platform_t platform, device_t *device_ret) {
-	return _first_layer->dispatch.platformCreateDevice(platform, device_ret);
+	if (!platform)
+		return _first_layer->dispatch.platformCreateDevice(platform, device_ret);
+	else
+		return CALL_FIRST_LAYER(platform, platformCreateDevice, platform, device_ret);
 }
 
-int deviceFunc1(device_t device, int param) {
-	return _first_layer->dispatch.deviceFunc1(device, param);
+int
+deviceFunc1(device_t device, int param) {
+	if (!device)
+		return _first_layer->dispatch.deviceFunc1(device, param);
+	else
+		return CALL_FIRST_LAYER(device, deviceFunc1, device, param);
 }
 
 int
 deviceFunc2(device_t device, int param) {
-	return _first_layer->dispatch.deviceFunc2(device, param);
+	if (!device)
+		return _first_layer->dispatch.deviceFunc2(device, param);
+	else
+		return CALL_FIRST_LAYER(device, deviceFunc2, device, param);
 }
 
 int
 deviceDestroy(device_t device) {
-	return _first_layer->dispatch.deviceDestroy(device);
+	if (!device)
+		return _first_layer->dispatch.deviceDestroy(device);
+	else
+		return CALL_FIRST_LAYER(device, deviceDestroy, device);
 }
 
 /**
@@ -492,46 +520,39 @@ platformAddLayer_disp(platform_t platform, const char *layer_name) {
 }
 
 /**
- * For driver implemented APIs, the global terminator call into the instance
- * layer chain.
+ * These are driver implemented and call into the dispatch tables.
  */
-
-#if FFI_INSTANCE_LAYERS
-#define NEXT_LAYER(handle, api) (handle->multiplex->first_layer)
-#define NEXT_ENTRY(handle, api) NEXT_LAYER(handle, api)->dispatch.api ## _instance
-#define CALL_FIRST_LAYER(handle, api, ...) NEXT_ENTRY(handle, api)(__VA_ARGS__)
-#else
-#define NEXT_LAYER(handle, api) (handle->multiplex->layer_dispatch.api ## _next)
-#define NEXT_ENTRY(handle, api) NEXT_LAYER(handle, api)->dispatch.api ## _instance
-#define CALL_FIRST_LAYER(handle, api, ...) NEXT_ENTRY(handle, api)(NEXT_LAYER(handle, api), __VA_ARGS__)
-#endif
 
 static int
 platformCreateDevice_disp(platform_t platform, device_t *device_ret) {
 	if (!platform)
 		return SPEC_ERROR;
-	return CALL_FIRST_LAYER(platform, platformCreateDevice, platform, device_ret);
+	int result = platform->multiplex->dispatch.platformCreateDevice(platform, device_ret);
+	/* Devices inherit from the platfom multiplex structure reference */
+	if (result == SPEC_SUCCESS)
+		(*device_ret)->multiplex = platform->multiplex;
+	return result;
 }
 
 static int
 deviceFunc1_disp(device_t device, int param) {
 	if (!device)
 		return SPEC_ERROR;
-	return CALL_FIRST_LAYER(device, deviceFunc1, device, param);
+	return device->multiplex->dispatch.deviceFunc1(device, param);
 }
 
 static int
 deviceFunc2_disp(device_t device, int param) {
 	if (!device)
 		return SPEC_ERROR;
-	return CALL_FIRST_LAYER(device, deviceFunc2, device, param);
+	return device->multiplex->dispatch.deviceFunc2(device, param);
 }
 
 static int
 deviceDestroy_disp(device_t device) {
 	if (!device)
 		return SPEC_ERROR;
-	return CALL_FIRST_LAYER(device, deviceDestroy, device);
+	return device->multiplex->dispatch.deviceDestroy(device);
 }
 
 /**
@@ -566,30 +587,26 @@ deviceDestroy_unsup(device_t device) {
 
 /**
  * Instance layer terminators either directly (for FFI layers) or indirectly
- * (for non-FFI layers).
+ * (for non-FFI layers). Call into the global layer chain.
  */
 static inline int
 platformCreateDevice_term(platform_t platform, device_t *device_ret) {
-	int result = platform->multiplex->dispatch.platformCreateDevice(platform, device_ret);
-	/* Devices inherit from the platfom multiplex structure reference */
-	if (result == SPEC_SUCCESS)
-		(*device_ret)->multiplex = platform->multiplex;
-	return result;
+	return _first_layer->dispatch.platformCreateDevice(platform, device_ret);
 }
 
 static inline int
 deviceFunc1_term(device_t device, int param) {
-	return device->multiplex->dispatch.deviceFunc1(device, param);
+	return _first_layer->dispatch.deviceFunc1(device, param);
 }
 
 static inline int
 deviceFunc2_term(device_t device, int param) {
-	return device->multiplex->dispatch.deviceFunc2(device, param);
+	return _first_layer->dispatch.deviceFunc2(device, param);
 }
 
 static inline int
 deviceDestroy_term(device_t device) {
-	return device->multiplex->dispatch.deviceDestroy(device);
+	return _first_layer->dispatch.deviceDestroy(device);
 }
 
 /**
