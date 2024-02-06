@@ -20,36 +20,44 @@ typedef struct device_s * device_t;
 /**
  * Query available platforms (see OpenCL clGetPlatformIDs).
  */
-extern int
-getPlatforms(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret);
-
+typedef int
+getPlatforms_t(size_t num_platforms, platform_t *platforms, size_t *num_platforms_ret);
 
 /**
  * Programmatically attach an instance layer to a platform.
  */
-extern int
-platformAddLayer(platform_t platform, const char *layer_name);
+typedef int
+platformAddLayer_t(platform_t platform, const char *layer_name);
 
 /**
  * Create a new device and return it in the variable pointed to by device_ret.
  */
-extern int
-platformCreateDevice(platform_t platform, device_t *device_ret);
+typedef int
+platformCreateDevice_t(platform_t platform, device_t *device_ret);
 
 /**
  * A function on a device.
  */
-extern int
-deviceFunc1(device_t device, int param);
+typedef int
+deviceFunc1_t(device_t device, int param);
 
 /**
  * Another function on a device.
  */
-extern int
-deviceFunc2(device_t device, int param);
+typedef int
+deviceFunc2_t(device_t device, int param);
 
 /**
  * Destroy the given device.
  */
-extern int
-deviceDestroy(device_t device);
+typedef int
+deviceDestroy_t(device_t device);
+
+#ifndef NO_PROTOTYPES
+extern getPlatforms_t         getPlatforms;
+extern platformAddLayer_t     platformAddLayer;
+extern platformCreateDevice_t platformCreateDevice;
+extern deviceFunc1_t          deviceFunc1;
+extern deviceFunc2_t          deviceFunc2;
+extern deviceDestroy_t        deviceDestroy;
+#endif

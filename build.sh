@@ -6,3 +6,4 @@ gcc -Wall -Wextra -pedantic -std=c99 -fPIC -g -shared -DLAYER_NUMBER=2 -DFFI_INS
 gcc -Wall -Wextra -pedantic -std=c99 -fPIC -g -shared -DFFI_INSTANCE_LAYERS=0 instance_layer.c -o libinstance_layer1.so
 gcc -Wall -Wextra -pedantic -std=c99 -fPIC -g -shared -DFFI_INSTANCE_LAYERS=0 exp-loader.c -o libexp-loader.so -ldl -lpthread
 gcc -Wall -Wextra -pedantic -std=c99 -fPIC -g test.c -o test -L./ -lexp-loader
+gcc -Wall -Wextra -pedantic -std=c99 -fPIC -g test.c -DNO_PROTOTYPES -o test_dlopen -L./ -ldl

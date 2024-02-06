@@ -3,6 +3,23 @@
 #include <assert.h>
 #include "spec.h"
 
+#ifdef NO_PROTOTYPES
+#include <dlfcn.h>
+#include <inttypes.h>
+static getPlatforms_t         *getPlatforms;
+static platformAddLayer_t     *platformAddLayer;
+static platformCreateDevice_t *platformCreateDevice;
+static deviceFunc1_t          *deviceFunc1;
+static deviceFunc2_t          *deviceFunc2;
+static deviceDestroy_t        *deviceDestroy;
+
+#define GET_SYM(sym) \
+do { \
+ sym = (sym ## _t *)(intptr_t)dlsym(handle, #sym); \
+ assert(sym); \
+} while (0)
+#endif
+
 void test_platform(platform_t platform) {
 	device_t device;
 	int err;
@@ -22,6 +39,17 @@ void test_platform(platform_t platform) {
 int main() {
 	size_t num_platforms = 0;
 	platform_t *platforms = NULL;
+#ifdef NO_PROTOTYPES
+	void *handle = dlopen("libexp-loader.so", RTLD_LAZY|RTLD_LOCAL);
+	assert(handle);
+	GET_SYM(getPlatforms);
+	GET_SYM(platformAddLayer);
+	GET_SYM(platformCreateDevice);
+	GET_SYM(deviceFunc1);
+	GET_SYM(deviceFunc2);
+	GET_SYM(deviceDestroy);
+	printf("Opened loader %p\n", handle);
+#endif
 	int err = getPlatforms(0, NULL, &num_platforms);
 	printf("Found %zu platforms, err = %d\n", num_platforms, err);
 	assert(!err);
@@ -38,5 +66,10 @@ int main() {
 	for (size_t i = 0; i < num_platforms; i++)
 		test_platform(platforms[i]);
 	free(platforms);
+#ifdef NO_PROTOTYPES
+	int res = dlclose(handle);
+	assert(!res);
+	printf("Closed loader %p\n", handle);
+#endif
 	return 0;
 }
