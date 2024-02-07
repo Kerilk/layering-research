@@ -655,13 +655,6 @@ void my_fini(void) {
 		free(platform);
 		platform = next_platform;
 	}
-	struct driver_s *driver = _first_driver;
-	while(driver) {
-		struct driver_s *next_driver = driver->next;
-		dlclose(driver->library);
-		free(driver);
-		driver = next_driver;
-	}
 	struct layer_s *layer = _first_layer;
 	while(layer != &_layer_terminator) {
 		struct layer_s *next_layer = layer->next;
@@ -670,5 +663,12 @@ void my_fini(void) {
 		dlclose(layer->library);
 		free(layer);
 		layer = next_layer;
+	}
+	struct driver_s *driver = _first_driver;
+	while(driver) {
+		struct driver_s *next_driver = driver->next;
+		dlclose(driver->library);
+		free(driver);
+		driver = next_driver;
 	}
 }
